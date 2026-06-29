@@ -50,20 +50,6 @@ function render() {
     const cardId = `card-${index}`;
     return `<article class="card type-${item.tipo}">
       ${renderImages(item, cardId)}
-      <div class="body">
-        ${item.nombre_comercial ? `<div class="name">${escapeHtml(item.nombre_comercial)}</div>` : ''}
-        <div class="code">${escapeHtml(item.codigo)}</div>
-        ${item.idf ? `<div class="csv-ref">${escapeHtml(item.idf)}${item.fotos ? ` · ${item.fotos} fotos` : ''}</div>` : ''}
-        ${item.descripcion ? `<div class="description">${escapeHtml(item.descripcion)}</div>` : ''}
-        <div class="meta">${TYPE[item.tipo] || item.tipo} · ${item.material_nombre || MATERIAL[item.material] || item.material} · ${item.color_nombre || COLOR[item.color] || item.color}</div>
-        <div class="facts">
-          ${price(item.precio_eur) ? `<span>${price(item.precio_eur)}</span>` : ''}
-          ${item.stock ? `<span>Stock ${escapeHtml(item.stock)}</span>` : ''}
-          ${item.medidas ? `<span>${escapeHtml(item.medidas)}</span>` : ''}
-          ${item.piedra_nombre ? `<span>${escapeHtml(item.piedra_nombre)}</span>` : ''}
-          ${item.estado ? `<span>${escapeHtml(item.estado)}</span>` : ''}
-        </div>
-      </div>
     </article>`;
   }).join('') : `<section class="empty-state"><strong>Catalogo en blanco</strong><span>Estamos preparando una nueva seleccion de piezas.</span></section>`;
 }
