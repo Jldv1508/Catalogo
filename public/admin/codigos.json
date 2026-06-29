@@ -1,0 +1,43 @@
+{
+  "types": {
+    "PUL": "Pulsera",
+    "ANI": "Anillo",
+    "PEN": "Pendiente",
+    "COL": "Collar",
+    "CON": "Conjunto",
+    "BRO": "Broche",
+    "PIE": "Pieza"
+  },
+  "materials": {
+    "001": "Bambú",
+    "002": "Metal",
+    "003": "Piedra",
+    "004": "Cristal",
+    "005": "Madera",
+    "006": "Resina",
+    "007": "Cuero",
+    "008": "Tela",
+    "009": "Concha",
+    "010": "Perla",
+    "011": "Acero",
+    "012": "Plata",
+    "013": "Dorado / baño oro",
+    "999": "Pendiente de clasificar"
+  },
+  "colors": {
+    "001": "Negro",
+    "002": "Plateado",
+    "003": "Dorado",
+    "004": "Rojo",
+    "005": "Azul",
+    "006": "Verde",
+    "007": "Blanco",
+    "008": "Marrón",
+    "009": "Rosa",
+    "010": "Multicolor",
+    "011": "Naranja",
+    "012": "Morado",
+    "013": "Turquesa",
+    "999": "Pendiente de clasificar"
+  }
+}
