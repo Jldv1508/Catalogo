@@ -109,6 +109,19 @@ function options(table, selected) {
 function noChangeOptions(table) {
   return '<option value="">Sin cambio</option>' + Object.entries(table).map(([k, v]) => `<option value="${k}">${k} · ${escapeHtml(v)}</option>`).join('');
 }
+function multiFilterOptions(table, name) {
+  return Object.entries(table).map(([k, v]) => `<label class="multi-option">
+    <input type="checkbox" name="${name}" value="${escapeAttr(k)}">
+    <span>${escapeHtml(k)} · ${escapeHtml(v)}</span>
+  </label>`).join('');
+}
+function selectedFilterValues(name) {
+  return new Set([...document.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value));
+}
+function updateFilterSummary(boxId, selected) {
+  const summary = document.querySelector(`#${boxId} summary span`);
+  if (summary) summary.textContent = selected.size ? `${selected.size} seleccionado${selected.size === 1 ? '' : 's'}` : 'Todos';
+}
 function updateSelectedCount() {
   document.getElementById('selectedCount').textContent = `${selected.size} seleccionada${selected.size === 1 ? '' : 's'}`;
 }
@@ -126,11 +139,14 @@ function initBulkEditor() {
   document.getElementById('bulkColor').innerHTML = noChangeOptions(tables.colors);
 }
 function initFilterEditor() {
-  document.getElementById('filterType').innerHTML = '<option value="">Todos</option>' + options(tables.types, '');
-  document.getElementById('filterMaterial').innerHTML = '<option value="">Todos</option>' + options(tables.materials, '');
-  document.getElementById('filterColor').innerHTML = '<option value="">Todos</option>' + options(tables.colors, '');
-  ['filterSearch', 'filterType', 'filterMaterial', 'filterColor', 'filterStatus', 'filterQuality'].forEach(id => {
+  document.getElementById('filterTypeOptions').innerHTML = multiFilterOptions(tables.types, 'filterType');
+  document.getElementById('filterMaterialOptions').innerHTML = multiFilterOptions(tables.materials, 'filterMaterial');
+  document.getElementById('filterColorOptions').innerHTML = multiFilterOptions(tables.colors, 'filterColor');
+  ['filterSearch', 'filterStatus', 'filterQuality'].forEach(id => {
     document.getElementById(id).addEventListener('input', render);
+  });
+  document.querySelectorAll('input[name="filterType"], input[name="filterMaterial"], input[name="filterColor"]').forEach(input => {
+    input.addEventListener('change', render);
   });
 }
 function refreshCodeEditors() {
@@ -185,15 +201,18 @@ function qualityIssues(item) {
 }
 function filteredEntries() {
   const query = document.getElementById('filterSearch')?.value.trim().toLowerCase() || '';
-  const type = document.getElementById('filterType')?.value || '';
-  const material = document.getElementById('filterMaterial')?.value || '';
-  const color = document.getElementById('filterColor')?.value || '';
+  const types = selectedFilterValues('filterType');
+  const materials = selectedFilterValues('filterMaterial');
+  const colors = selectedFilterValues('filterColor');
   const status = document.getElementById('filterStatus')?.value || '';
   const quality = document.getElementById('filterQuality')?.value || '';
+  updateFilterSummary('filterTypeBox', types);
+  updateFilterSummary('filterMaterialBox', materials);
+  updateFilterSummary('filterColorBox', colors);
   return items.map((item, index) => ({ item, index })).filter(({ item }) => {
-    if (type && item.type !== type) return false;
-    if (material && item.material !== material) return false;
-    if (color && item.color !== color) return false;
+    if (types.size && !types.has(item.type)) return false;
+    if (materials.size && !materials.has(item.material)) return false;
+    if (colors.size && !colors.has(item.color)) return false;
     if (status && (item.status || 'disponible') !== status) return false;
     if (quality && !qualityIssues(item).includes(quality)) return false;
     if (!query) return true;
@@ -205,7 +224,13 @@ window.toggleCardSelection = function(index, checked) {
   render();
 };
 window.selectAllCards = function() {
-  items.forEach((_, index) => selected.add(index));
+  filteredEntries().forEach(({ index }) => selected.add(index));
+  render();
+};
+window.invertVisibleSelection = function() {
+  filteredEntries().forEach(({ index }) => {
+    selected.has(index) ? selected.delete(index) : selected.add(index);
+  });
   render();
 };
 window.clearCardSelection = function() {
@@ -268,9 +293,12 @@ window.restoreInitialItems = function() {
   render();
 };
 window.clearFilters = function() {
-  ['filterSearch', 'filterType', 'filterMaterial', 'filterColor', 'filterStatus', 'filterQuality'].forEach(id => {
+  ['filterSearch', 'filterStatus', 'filterQuality'].forEach(id => {
     const element = document.getElementById(id);
     if (element) element.value = '';
+  });
+  document.querySelectorAll('input[name="filterType"], input[name="filterMaterial"], input[name="filterColor"]').forEach(input => {
+    input.checked = false;
   });
   render();
 };
