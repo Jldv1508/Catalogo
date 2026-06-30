@@ -552,6 +552,9 @@ function download(filename, text, type = 'text/plain') {
   a.click();
   URL.revokeObjectURL(url);
 }
+function safeScriptJson(value) {
+  return JSON.stringify(value, null, 2).replace(/</g, '\\u003c');
+}
 function toCsv() {
   const header = ['original','nuevo_nombre','nombre_comercial','tipo','tipo_nombre','material','material_nombre','color_codigo','color_nombre','unidad','precio_eur','precio_mostrado','stock','medidas','estado','imagen_x','imagen_y','imagen_zoom','foto_reemplazada','notas'];
   const rows = items.map(i => [i.original, newName(i), i.productName || '', i.type, tableLabel(tables.types, i.type), i.material, tableLabel(tables.materials, i.material), i.color, tableLabel(tables.colors, i.color), i.unit, normalizePrice(i.price), formatPrice(i.price), normalizeStock(i.stock), i.measures || '', i.status || 'disponible', i.imageX, i.imageY, i.imageZoom, i.replacementFileName || '', i.notes || '']);
@@ -567,11 +570,90 @@ function backupPayload() {
     items: items.map(i => ({ ...i, image: persistedImageFor(i), newName: newName(i), code: code(i) })),
   };
 }
+function editableHtml() {
+  const payload = backupPayload();
+  const fields = [
+    ['productName', 'Nombre'],
+    ['type', 'Tipo'],
+    ['material', 'Material'],
+    ['color', 'Color'],
+    ['unit', 'Unidad'],
+    ['price', 'Precio'],
+    ['stock', 'Stock'],
+    ['status', 'Estado'],
+    ['imageX', 'Horizontal'],
+    ['imageY', 'Vertical'],
+    ['imageZoom', 'Tamaño'],
+    ['notes', 'Notas'],
+  ];
+  const cards = payload.items.map((item, index) => `<article class="card" data-index="${index}">
+    <img src="${escapeAttr(item.image || '')}" alt="${escapeAttr(item.original || '')}">
+    <strong>${escapeHtml(item.code || code(item))}</strong>
+    <small>${escapeHtml(item.original || '')}</small>
+    <div class="fields">
+      ${fields.map(([field, label]) => `<label>${label}<input data-field="${field}" value="${escapeAttr(item[field] ?? '')}"></label>`).join('')}
+    </div>
+  </article>`).join('');
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Respaldo editable jldv1508</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3eee7;color:#24211f}
+    header{position:sticky;top:0;z-index:2;background:#fffdf9;border-bottom:1px solid #ded5cc;padding:14px 18px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    h1{margin:0;font:28px Georgia,serif}button{border:1px solid #ded5cc;border-radius:8px;background:white;padding:10px 12px;font:inherit;cursor:pointer}
+    main{padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.card{background:#fffdf9;border:1px solid #ded5cc;border-radius:8px;padding:10px;display:grid;gap:8px}
+    img{width:100%;aspect-ratio:1/1;object-fit:contain;background:white;border-radius:6px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:7px}label{display:grid;gap:3px;font-size:12px;font-weight:800;color:#706860}
+    input{width:100%;box-sizing:border-box;border:1px solid #ded5cc;border-radius:7px;padding:7px;background:white}.fields label:last-child{grid-column:1/-1}
+  </style>
+</head>
+<body>
+  <header><h1>Respaldo editable jldv1508</h1><div><button id="downloadHtml">Descargar HTML actualizado</button> <button id="downloadJson">Descargar JSON</button></div></header>
+  <main>${cards}</main>
+  <script id="jldv1508-backup" type="application/json">${safeScriptJson(payload)}</script>
+  <script>
+    const backup = JSON.parse(document.getElementById('jldv1508-backup').textContent);
+    function syncScript(){ document.getElementById('jldv1508-backup').textContent = JSON.stringify(backup, null, 2).replace(/</g, '\\\\u003c'); }
+    document.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', () => {
+      const card = input.closest('[data-index]');
+      backup.items[Number(card.dataset.index)][input.dataset.field] = input.value;
+      backup.createdAt = new Date().toISOString();
+      syncScript();
+    }));
+    function download(name, text, type){
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    }
+    document.getElementById('downloadJson').onclick = () => { syncScript(); download('respaldo-jldv1508-editado.json', JSON.stringify(backup, null, 2), 'application/json'); };
+    document.getElementById('downloadHtml').onclick = () => { syncScript(); download('respaldo-jldv1508-editado.html', '<!doctype html>\\n' + document.documentElement.outerHTML, 'text/html'); };
+  </script>
+</body>
+</html>`;
+}
+function parseBackupFile(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const embedded = doc.querySelector('#jldv1508-backup')?.textContent;
+    if (!embedded) throw new Error('No encuentro datos de respaldo dentro del archivo.');
+    return JSON.parse(embedded);
+  }
+}
 document.getElementById('saveBtn').addEventListener('click', () => { save(); alert('Guardado en este navegador.'); });
 document.getElementById('csvBtn').addEventListener('click', () => { save(); download('renombrado-jldv1508.csv', toCsv(), 'text/csv'); });
 document.getElementById('jsonBtn').addEventListener('click', () => {
   save();
   download('respaldo-jldv1508.json', JSON.stringify(backupPayload(), null, 2), 'application/json');
+});
+document.getElementById('htmlBtn')?.addEventListener('click', () => {
+  save();
+  download('respaldo-editable-jldv1508.html', editableHtml(), 'text/html');
 });
 document.getElementById('restoreJsonInput')?.addEventListener('change', event => {
   const file = event.target.files?.[0];
@@ -579,7 +661,7 @@ document.getElementById('restoreJsonInput')?.addEventListener('change', event =>
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const backup = JSON.parse(String(reader.result || '{}'));
+      const backup = parseBackupFile(String(reader.result || ''));
       const restoredItems = listFromBackup(backup);
       if (!restoredItems?.length) throw new Error('El archivo no contiene tarjetas.');
       if (!confirm(`Restaurar ${restoredItems.length} tarjeta(s) desde este respaldo?`)) return;
