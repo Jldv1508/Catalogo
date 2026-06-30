@@ -1,7 +1,10 @@
 const STORAGE_KEY = document.body.dataset.storageKey || 'jldv1508RenameItemsV9';
 const TABLES_KEY = document.body.dataset.tablesKey || 'jldv1508CodeTablesV1';
-let items = hydrateItems(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || window.INITIAL_ITEMS);
-let tables = hydrateTables(JSON.parse(localStorage.getItem(TABLES_KEY) || 'null') || window.CODE_TABLES);
+const LEGACY_STORAGE_KEYS = (document.body.dataset.legacyStorageKeys || '').split(',').map(key => key.trim()).filter(Boolean);
+const LEGACY_TABLES_KEYS = (document.body.dataset.legacyTablesKeys || '').split(',').map(key => key.trim()).filter(Boolean);
+const BACKUP_KEY = `${STORAGE_KEY}:ultimo-respaldo`;
+let items = hydrateItems(loadStoredList(STORAGE_KEY, LEGACY_STORAGE_KEYS, window.INITIAL_ITEMS));
+let tables = hydrateTables(loadStoredObject(TABLES_KEY, LEGACY_TABLES_KEYS, window.CODE_TABLES));
 const grid = document.getElementById('grid');
 const selected = new Set();
 const previewImages = new Map();
@@ -44,11 +47,90 @@ function imageStyle(item) {
 }
 function hydrateTables(source) {
   const base = source || { types: {}, materials: {}, colors: {} };
+  const defaults = window.CODE_TABLES || { types: {}, materials: {}, colors: {} };
   return {
-    types: { ...(base.types || {}) },
-    materials: { ...(base.materials || {}) },
-    colors: { ...(base.colors || {}) },
+    types: { ...(defaults.types || {}), ...(base.types || {}) },
+    materials: { ...(defaults.materials || {}), ...(base.materials || {}) },
+    colors: { ...(defaults.colors || {}), ...(base.colors || {}) },
   };
+}
+function parseStoredJson(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function loadStoredObject(key, legacyKeys, fallback) {
+  const current = parseStoredJson(key);
+  if (current) return current;
+  for (const legacyKey of legacyKeys) {
+    const legacy = parseStoredJson(legacyKey);
+    if (legacy) {
+      localStorage.setItem(key, JSON.stringify(legacy));
+      return legacy;
+    }
+  }
+  return fallback;
+}
+function listFromBackup(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  return null;
+}
+function mergeWithInitial(saved, initial) {
+  const savedList = listFromBackup(saved);
+  if (!savedList?.length) return initial;
+  const savedByOriginal = new Map(savedList.map(item => [item.original, item]));
+  const merged = (initial || []).map(initialItem => {
+    const savedItem = savedByOriginal.get(initialItem.original);
+    return savedItem ? { ...initialItem, ...savedItem, image: savedItem.image || initialItem.image, images: savedItem.images?.length ? savedItem.images : initialItem.images } : initialItem;
+  });
+  const initialOriginals = new Set((initial || []).map(item => item.original));
+  savedList.forEach(item => {
+    if (!initialOriginals.has(item.original)) merged.push(item);
+  });
+  return merged;
+}
+function hasCardEdits(list, initial) {
+  const savedList = listFromBackup(list) || [];
+  const initialByOriginal = new Map((initial || []).map(item => [item.original, item]));
+  return savedList.some(item => {
+    const base = initialByOriginal.get(item.original) || {};
+    return Boolean(
+      item.productName || item.nombre || item.price || item.notes || item.measures || item.medidas ||
+      item.replacementFileName || item.replacementPending ||
+      (item.status && item.status !== 'disponible') ||
+      item.type !== base.type || item.material !== base.material || item.color !== base.color ||
+      String(item.unit || '') !== String(base.unit || '') ||
+      String(item.stock || '') !== String(base.stock || '') ||
+      imageNumber(item.imageX ?? item.image_x, 50, 0, 100) !== imageNumber(base.imageX ?? base.image_x, 50, 0, 100) ||
+      imageNumber(item.imageY ?? item.image_y, 50, 0, 100) !== imageNumber(base.imageY ?? base.image_y, 50, 0, 100) ||
+      imageNumber(item.imageZoom ?? item.image_zoom, 1, .7, 2.2) !== imageNumber(base.imageZoom ?? base.image_zoom, 1, .7, 2.2)
+    );
+  });
+}
+function loadStoredList(key, legacyKeys, fallback) {
+  const current = parseStoredJson(key);
+  const legacy = legacyKeys.map(parseStoredJson).find(Boolean);
+  if (current) {
+    if (legacy && hasCardEdits(legacy, fallback) && !hasCardEdits(current, fallback)) {
+      const migrated = mergeWithInitial(legacy, fallback);
+      localStorage.setItem(key, JSON.stringify(migrated));
+      return migrated;
+    }
+    return mergeWithInitial(current, fallback);
+  }
+  for (const legacyKey of legacyKeys) {
+    const legacyValue = parseStoredJson(legacyKey);
+    if (legacyValue) {
+      const migrated = mergeWithInitial(legacyValue, fallback);
+      localStorage.setItem(key, JSON.stringify(migrated));
+      return migrated;
+    }
+  }
+  return fallback;
 }
 function normalizePrice(value) {
   const raw = String(value ?? '').trim();
@@ -439,6 +521,14 @@ function save() {
     ...item,
     image: persistedImageFor(item),
   }));
+  const previous = localStorage.getItem(STORAGE_KEY);
+  if (previous) {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify({
+      createdAt: new Date().toISOString(),
+      tables,
+      items: listFromBackup(parseStoredJson(STORAGE_KEY)) || [],
+    }));
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(storableItems));
   saveTables();
 }
@@ -467,14 +557,61 @@ function toCsv() {
   const rows = items.map(i => [i.original, newName(i), i.productName || '', i.type, tableLabel(tables.types, i.type), i.material, tableLabel(tables.materials, i.material), i.color, tableLabel(tables.colors, i.color), i.unit, normalizePrice(i.price), formatPrice(i.price), normalizeStock(i.stock), i.measures || '', i.status || 'disponible', i.imageX, i.imageY, i.imageZoom, i.replacementFileName || '', i.notes || '']);
   return [header, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
 }
+function backupPayload() {
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    page: document.title,
+    storageKey: STORAGE_KEY,
+    tables,
+    items: items.map(i => ({ ...i, image: persistedImageFor(i), newName: newName(i), code: code(i) })),
+  };
+}
 document.getElementById('saveBtn').addEventListener('click', () => { save(); alert('Guardado en este navegador.'); });
 document.getElementById('csvBtn').addEventListener('click', () => { save(); download('renombrado-jldv1508.csv', toCsv(), 'text/csv'); });
 document.getElementById('jsonBtn').addEventListener('click', () => {
   save();
-  download('renombrado-jldv1508.json', JSON.stringify({
-    tables,
-    items: items.map(i => ({ ...i, newName: newName(i), code: code(i) })),
-  }, null, 2), 'application/json');
+  download('respaldo-jldv1508.json', JSON.stringify(backupPayload(), null, 2), 'application/json');
+});
+document.getElementById('restoreJsonInput')?.addEventListener('change', event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const backup = JSON.parse(String(reader.result || '{}'));
+      const restoredItems = listFromBackup(backup);
+      if (!restoredItems?.length) throw new Error('El archivo no contiene tarjetas.');
+      if (!confirm(`Restaurar ${restoredItems.length} tarjeta(s) desde este respaldo?`)) return;
+      items = hydrateItems(mergeWithInitial(restoredItems, window.INITIAL_ITEMS));
+      tables = hydrateTables(backup.tables || tables);
+      previewImages.forEach(url => URL.revokeObjectURL(url));
+      previewImages.clear();
+      selected.clear();
+      save();
+      refreshCodeEditors();
+      alert('Respaldo restaurado.');
+    } catch (error) {
+      alert(`No se pudo restaurar el respaldo: ${error.message}`);
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+});
+document.getElementById('restoreLastBackupBtn')?.addEventListener('click', () => {
+  const backup = parseStoredJson(BACKUP_KEY);
+  const restoredItems = listFromBackup(backup);
+  if (!restoredItems?.length) {
+    alert('Todavia no hay un respaldo anterior en este navegador.');
+    return;
+  }
+  if (!confirm(`Restaurar el ultimo respaldo automatico con ${restoredItems.length} tarjeta(s)?`)) return;
+  items = hydrateItems(mergeWithInitial(restoredItems, window.INITIAL_ITEMS));
+  tables = hydrateTables(backup.tables || tables);
+  selected.clear();
+  save();
+  refreshCodeEditors();
 });
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));

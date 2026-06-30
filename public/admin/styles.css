@@ -16,6 +16,9 @@ button.danger:hover { border-color:#c24141; }
 .admin-tab { border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:white; color:var(--ink); text-decoration:none; font-weight:900; }
 .admin-tab:hover { border-color:var(--gold); }
 .admin-tab.active { background:var(--accent); border-color:var(--accent); color:white; }
+.file-action { position:relative; overflow:hidden; display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:white; color:var(--ink); cursor:pointer; }
+.file-action:hover { border-color:var(--gold); }
+.file-action input { position:absolute; inset:0; opacity:0; cursor:pointer; }
 .legend { padding:14px 22px 0; display:grid; gap:8px; }
 details { background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
 summary { cursor:pointer; font-weight:800; }

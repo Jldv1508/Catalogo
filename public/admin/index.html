@@ -7,7 +7,7 @@
   <title>Renombrador jldv1508</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body data-storage-key="jldv1508BisuteriaRenameItemsV9" data-tables-key="jldv1508BisuteriaCodeTablesV1">
+<body data-storage-key="jldv1508BisuteriaRenameItemsV9" data-tables-key="jldv1508BisuteriaCodeTablesV1" data-legacy-storage-keys="jldv1508RenameItemsV9" data-legacy-tables-keys="jldv1508CodeTablesV1">
   <header>
     <div>
       <h1>Renombrador de bisutería</h1>
@@ -18,7 +18,9 @@
       <a class="admin-tab" href="/admin/conchas">Conchas</a>
       <button id="saveBtn">Guardar en navegador</button>
       <button id="csvBtn">Exportar CSV</button>
-      <button id="jsonBtn">Exportar JSON</button>
+      <button id="jsonBtn">Descargar respaldo</button>
+      <label class="file-action">Restaurar respaldo<input id="restoreJsonInput" type="file" accept="application/json,.json"></label>
+      <button id="restoreLastBackupBtn" type="button">Último respaldo</button>
     </div>
   </header>
   <section class="legend">
