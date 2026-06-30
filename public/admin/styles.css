@@ -52,8 +52,8 @@ main { padding:18px 22px 42px; display:grid; grid-template-columns:repeat(auto-f
 .card.selected { border-color:#52796f; box-shadow:0 0 0 3px rgba(82,121,111,.2); transform:translateY(-1px); }
 .select-card { position:absolute; top:10px; left:10px; z-index:2; display:flex; align-items:center; gap:6px; background:rgba(255,255,255,.92); border:1px solid var(--line); border-radius:999px; padding:6px 9px; color:var(--ink); font-size:12px; font-weight:900; }
 .select-card input { width:auto; }
-.card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#ece7df; transition:transform .22s ease; transform-origin:center; }
-.card:hover img { transform:scale(1.28); }
+.card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#ece7df; filter:brightness(1.1) contrast(1.06) saturate(1.08); transition:transform .22s ease, filter .22s ease; transform-origin:center; }
+.card:hover img { transform:scale(1.28); filter:brightness(1.14) contrast(1.08) saturate(1.1); }
 .body { padding:12px; display:grid; gap:10px; }
 .original { color:var(--muted); font-size:13px; }
 .code { font-weight:900; font-size:20px; color:var(--accent); word-break:break-all; }
