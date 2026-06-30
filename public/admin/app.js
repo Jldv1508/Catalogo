@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'jldv1508RenameItemsV8';
+const STORAGE_KEY = 'jldv1508RenameItemsV9';
 const TABLES_KEY = 'jldv1508CodeTablesV1';
 let items = hydrateItems(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || window.INITIAL_ITEMS);
 let tables = hydrateTables(JSON.parse(localStorage.getItem(TABLES_KEY) || 'null') || window.CODE_TABLES);
@@ -99,7 +99,7 @@ function defaultDescriptionWithFallback(item) {
 }
 function refreshDescriptionsFor(indexes) {
   indexes.forEach(index => {
-    if (items[index]) items[index].description = defaultDescription(items[index]);
+    if (items[index]) items[index].description = '';
   });
 }
 function capitalize(value) {
@@ -361,7 +361,6 @@ function render() {
       <div class="code">${escapeHtml(code(item))}</div>
       <div class="descriptor">${escapeHtml(tableLabel(tables.types, item.type))} · ${escapeHtml(tableLabel(tables.materials, item.material))} · ${escapeHtml(item.color)} ${escapeHtml(tableLabel(tables.colors, item.color))}</div>
       ${item.referenceCsv || item.idf ? `<div class="csv-ref">${escapeHtml(item.referenceCsv || '')}${item.idf ? ` · ${escapeHtml(item.idf)}` : ''}${item.imageCount ? ` · ${escapeHtml(item.imageCount)} fotos` : ''}</div>` : ''}
-      ${item.description ? `<div class="description">${escapeHtml(item.description)}</div>` : ''}
       ${qualityIssues(item).length ? `<div class="quality-warning">${qualityIssues(item).map(issue => issue === 'posible_desenfoque' ? 'Posible desenfoque' : 'Relleno central').join(' · ')}</div>` : ''}
       <div class="price-display">${escapeHtml(formatPrice(item.price))}</div>
       <div class="fields">

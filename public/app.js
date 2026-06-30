@@ -40,7 +40,7 @@ optionize(type, TYPE);
 optionize(material, MATERIAL);
 optionize(color, COLOR);
 [search, type, material, color].forEach(element => element.addEventListener('input', render));
-fetch('catalogo-fotos.json?v=742-20260630').then(response => response.json()).then(data => {
+fetch('catalogo-fotos.json?v=780-20260630').then(response => response.json()).then(data => {
   catalog = data;
   render();
 });
