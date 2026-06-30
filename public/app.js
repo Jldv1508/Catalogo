@@ -6,12 +6,27 @@ const search = document.querySelector('#search');
 const type = document.querySelector('#type');
 const material = document.querySelector('#material');
 const color = document.querySelector('#color');
+const catalogUrl = document.body.dataset.catalogUrl || 'catalogo-fotos.json?v=780-20260630';
+const emptyTitle = document.body.dataset.emptyTitle || 'Catálogo en blanco';
+const emptyText = document.body.dataset.emptyText || 'Estamos preparando una nueva selección de piezas.';
 let catalog = [];
 
 function optionize(select, values) {
+  const selected = select.value;
+  const first = select.querySelector('option')?.outerHTML || '<option value="">Todos</option>';
+  select.innerHTML = first;
   Object.entries(values).forEach(([key, value]) => {
-    select.insertAdjacentHTML('beforeend', `<option value="${key}">${value}</option>`);
+    select.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(key)}">${escapeHtml(value)}</option>`);
   });
+  select.value = values[selected] ? selected : '';
+}
+
+function filterOptions(base, field, nameField) {
+  return catalog.reduce((options, item) => {
+    const key = item[field];
+    if (key && !options[key]) options[key] = item[nameField] || key;
+    return options;
+  }, { ...base });
 }
 
 function price(value) {
@@ -33,14 +48,14 @@ function render() {
   );
   grid.innerHTML = rows.length ? rows.map(item => `<article class="card type-${item.tipo}">
     <div class="image"><img src="${item.archivo}" alt="${escapeHtml(item.codigo)}" loading="lazy"></div>
-  </article>`).join('') : `<section class="empty-state"><strong>Catalogo en blanco</strong><span>Estamos preparando una nueva seleccion de piezas.</span></section>`;
+  </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
 }
 
-optionize(type, TYPE);
-optionize(material, MATERIAL);
-optionize(color, COLOR);
 [search, type, material, color].forEach(element => element.addEventListener('input', render));
-fetch('catalogo-fotos.json?v=780-20260630').then(response => response.json()).then(data => {
+fetch(catalogUrl).then(response => response.json()).then(data => {
   catalog = data;
+  optionize(type, filterOptions(TYPE, 'tipo', 'tipo_nombre'));
+  optionize(material, filterOptions(MATERIAL, 'material', 'material_nombre'));
+  optionize(color, filterOptions(COLOR, 'color', 'color_nombre'));
   render();
 });
