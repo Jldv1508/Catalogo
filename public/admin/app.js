@@ -112,6 +112,9 @@ function options(table, selected) {
 function noChangeOptions(table) {
   return '<option value="">Sin cambio</option>' + Object.entries(table).map(([k, v]) => `<option value="${escapeAttr(k)}">${escapeHtml(k)} · ${escapeHtml(v)}</option>`).join('');
 }
+function deleteOptions(table) {
+  return '<option value="">Elige una categoría</option>' + Object.entries(table).map(([k, v]) => `<option value="${escapeAttr(k)}">${escapeHtml(k)} · ${escapeHtml(v)}</option>`).join('');
+}
 function multiFilterOptions(table, name) {
   return Object.entries(table).map(([k, v]) => `<label class="multi-option">
     <input type="checkbox" name="${name}" value="${escapeAttr(k)}">
@@ -141,6 +144,11 @@ function initBulkEditor() {
   document.getElementById('bulkMaterial').innerHTML = noChangeOptions(tables.materials);
   document.getElementById('bulkColor').innerHTML = noChangeOptions(tables.colors);
 }
+function initCodeManager() {
+  document.getElementById('typesDelete').innerHTML = deleteOptions(tables.types);
+  document.getElementById('materialsDelete').innerHTML = deleteOptions(tables.materials);
+  document.getElementById('colorsDelete').innerHTML = deleteOptions(tables.colors);
+}
 function initFilterEditor() {
   document.getElementById('filterTypeOptions').innerHTML = multiFilterOptions(tables.types, 'filterType');
   document.getElementById('filterMaterialOptions').innerHTML = multiFilterOptions(tables.materials, 'filterMaterial');
@@ -153,6 +161,7 @@ function initFilterEditor() {
   });
 }
 function refreshCodeEditors() {
+  initCodeManager();
   initBulkEditor();
   initFilterEditor();
   renderLegend();
@@ -189,6 +198,38 @@ window.addCodeOption = function(kind) {
   saveTables();
   if (codeInput) codeInput.value = '';
   if (nameInput) nameInput.value = '';
+  refreshCodeEditors();
+};
+window.deleteCodeOption = function(kind) {
+  const select = document.getElementById(`${kind}Delete`);
+  const codeValue = select?.value || '';
+  if (!codeValue || !tables[kind]?.[codeValue]) {
+    alert('Elige primero una categoria para eliminar.');
+    return;
+  }
+  const labels = { types: 'tipo', materials: 'material', colors: 'color' };
+  const fields = { types: 'type', materials: 'material', colors: 'color' };
+  const fallbacks = { types: 'PIE', materials: '999', colors: '999' };
+  const field = fields[kind];
+  const fallback = fallbacks[kind];
+  const affected = items.filter(item => item[field] === codeValue).length;
+  if (codeValue === fallback) {
+    alert('No se puede eliminar la categoria pendiente, porque se usa como destino de seguridad.');
+    return;
+  }
+  const fallbackExists = Boolean(tables[kind]?.[fallback]);
+  const affectedText = affected && fallbackExists ? `\n\n${affected} pieza(s) usan esta categoria y pasaran a ${fallback} · ${tables[kind][fallback]}.` : affected ? `\n\n${affected} pieza(s) usan esta categoria y conservaran el codigo, pero ya no aparecera como opcion.` : '';
+  if (!confirm(`Eliminar ${labels[kind]} "${codeValue} · ${tables[kind][codeValue]}"?${affectedText}`)) return;
+  delete tables[kind][codeValue];
+  if (affected && fallbackExists) {
+    items.forEach(item => {
+      if (item[field] === codeValue) item[field] = fallback;
+    });
+    selected.clear();
+    renumberAll();
+    save();
+  }
+  saveTables();
   refreshCodeEditors();
 };
 window.resetCodeTables = function() {
@@ -355,7 +396,7 @@ function render() {
         }
         card.querySelector('.code').textContent = code(items[index]);
         if (field === 'type') {
-          card.className = `card type-${items[index].type} ${selected.has(index) ? 'selected' : ''}`;
+          card.className = `card ${typeClass(items[index].type)} ${selected.has(index) ? 'selected' : ''}`;
         }
       });
       input.addEventListener('change', () => {
@@ -368,7 +409,7 @@ function render() {
         }
         card.querySelector('.code').textContent = code(items[index]);
         if (field === 'type') {
-          card.className = `card type-${items[index].type} ${selected.has(index) ? 'selected' : ''}`;
+          card.className = `card ${typeClass(items[index].type)} ${selected.has(index) ? 'selected' : ''}`;
         }
       });
       input.addEventListener('blur', () => {
