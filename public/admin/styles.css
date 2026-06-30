@@ -13,6 +13,9 @@ button:hover { border-color:var(--gold); }
 button.danger { color:#8f2d2d; border-color:#efc8c8; background:#fff7f7; }
 button.danger:hover { border-color:#c24141; }
 .actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+.admin-tab { border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:white; color:var(--ink); text-decoration:none; font-weight:900; }
+.admin-tab:hover { border-color:var(--gold); }
+.admin-tab.active { background:var(--accent); border-color:var(--accent); color:white; }
 .legend { padding:14px 22px 0; display:grid; gap:8px; }
 details { background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
 summary { cursor:pointer; font-weight:800; }

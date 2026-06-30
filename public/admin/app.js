@@ -1,5 +1,5 @@
-const STORAGE_KEY = 'jldv1508RenameItemsV9';
-const TABLES_KEY = 'jldv1508CodeTablesV1';
+const STORAGE_KEY = document.body.dataset.storageKey || 'jldv1508RenameItemsV9';
+const TABLES_KEY = document.body.dataset.tablesKey || 'jldv1508CodeTablesV1';
 let items = hydrateItems(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || window.INITIAL_ITEMS);
 let tables = hydrateTables(JSON.parse(localStorage.getItem(TABLES_KEY) || 'null') || window.CODE_TABLES);
 const grid = document.getElementById('grid');
