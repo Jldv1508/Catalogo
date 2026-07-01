@@ -330,6 +330,13 @@ body:not(.home) main:not(.choice-screen) { display:grid; grid-template-columns:r
   gap:24px;
   padding:24px clamp(18px,4vw,52px) 40px;
 }
+body.blog main.blog-main {
+  display:grid;
+  grid-template-columns:1fr;
+}
+.blog-main > section {
+  min-width:0;
+}
 .blog-hero {
   display:grid;
   grid-template-columns:minmax(0,.95fr) minmax(320px,1.05fr);
