@@ -215,7 +215,6 @@ function detailsHtml(item) {
 
 function render() {
   syncSmartFilters();
-  syncTreeFilter();
   const rows = sortRows(selectedRows());
   currentRows = rows;
   syncUrl();
