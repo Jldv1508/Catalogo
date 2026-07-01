@@ -17,6 +17,7 @@ const emptyTitle = document.body.dataset.emptyTitle || 'Catálogo en blanco';
 const emptyText = document.body.dataset.emptyText || 'Estamos preparando una nueva selección de piezas.';
 let catalog = [];
 let syncingFilters = false;
+let currentRows = [];
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch]));
@@ -187,30 +188,76 @@ function cardTitle(item) {
   return item.nombre_comercial || item.codigo || item.referencia_csv || 'Pieza';
 }
 
+function itemDetails(item) {
+  return [
+    ['Código', item.codigo || ''],
+    ['Tipo', typeName(item)],
+    ['Material', materialName(item)],
+    ['Color', colorName(item)],
+    ['Precio', priceText(item.precio_eur) || 'Precio pendiente'],
+    ['Estado', `${STATUS[item.estado] || item.estado || 'Disponible'}${item.stock ? ` · Stock ${item.stock}` : ''}`],
+    ['Medidas', item.medidas || ''],
+    ['Descripción', item.descripcion || ''],
+  ].filter(([, value]) => String(value || '').trim());
+}
+
+function detailsHtml(item) {
+  return `<dl>${itemDetails(item).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`;
+}
+
 function render() {
   syncSmartFilters();
   const rows = selectedRows();
+  currentRows = rows;
   syncUrl();
   if (visibleCount) visibleCount.textContent = `${rows.length} de ${catalog.length}`;
-  grid.innerHTML = rows.length ? rows.map(item => `<article class="card type-${escapeHtml(item.tipo)}">
-    <div class="image"><img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo)}" loading="lazy" style="${imageStyle(item)}"></div>
+  grid.innerHTML = rows.length ? rows.map((item, index) => `<article class="card type-${escapeHtml(item.tipo)}">
+    <button class="image image-button" type="button" data-card-index="${index}" aria-label="Ampliar ${escapeHtml(cardTitle(item))}">
+      <img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo)}" loading="lazy" style="${imageStyle(item)}">
+    </button>
     <div class="card-info">
       <strong>${escapeHtml(cardTitle(item))}</strong>
-      <details class="card-details">
-        <summary>Ver datos</summary>
-        <dl>
-          <div><dt>Código</dt><dd>${escapeHtml(item.codigo || '')}</dd></div>
-          <div><dt>Tipo</dt><dd>${escapeHtml(typeName(item))}</dd></div>
-          <div><dt>Material</dt><dd>${escapeHtml(materialName(item))}</dd></div>
-          <div><dt>Color</dt><dd>${escapeHtml(colorName(item))}</dd></div>
-          <div><dt>Precio</dt><dd>${priceText(item.precio_eur) ? escapeHtml(priceText(item.precio_eur)) : 'Precio pendiente'}</dd></div>
-          <div><dt>Estado</dt><dd>${escapeHtml(STATUS[item.estado] || item.estado || 'Disponible')}${item.stock ? ` · Stock ${escapeHtml(item.stock)}` : ''}</dd></div>
-          ${item.medidas ? `<div><dt>Medidas</dt><dd>${escapeHtml(item.medidas)}</dd></div>` : ''}
-          ${item.descripcion ? `<div><dt>Descripción</dt><dd>${escapeHtml(item.descripcion)}</dd></div>` : ''}
-        </dl>
-      </details>
     </div>
   </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
+}
+
+function ensureViewer() {
+  let viewer = document.querySelector('#itemViewer');
+  if (viewer) return viewer;
+  document.body.insertAdjacentHTML('beforeend', `<div id="itemViewer" class="item-viewer" hidden>
+    <div class="item-viewer-backdrop" data-close-viewer></div>
+    <article class="item-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="itemViewerTitle">
+      <button class="item-viewer-close" type="button" data-close-viewer aria-label="Cerrar">×</button>
+      <div class="item-viewer-image"></div>
+      <div class="item-viewer-info">
+        <p class="item-viewer-kicker">Ficha de pieza</p>
+        <h2 id="itemViewerTitle"></h2>
+        <div class="item-viewer-details"></div>
+      </div>
+    </article>
+  </div>`);
+  viewer = document.querySelector('#itemViewer');
+  viewer.addEventListener('click', event => {
+    if (event.target.closest('[data-close-viewer]')) closeViewer();
+  });
+  return viewer;
+}
+
+function openViewer(item) {
+  const viewer = ensureViewer();
+  viewer.querySelector('#itemViewerTitle').textContent = cardTitle(item);
+  viewer.querySelector('.item-viewer-image').innerHTML = `<img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo || cardTitle(item))}" style="${imageStyle(item)}">`;
+  viewer.querySelector('.item-viewer-details').innerHTML = detailsHtml(item);
+  viewer.hidden = false;
+  document.body.classList.add('viewer-open');
+  viewer.querySelector('.item-viewer-close').focus();
+}
+
+function closeViewer() {
+  const viewer = document.querySelector('#itemViewer');
+  if (!viewer) return;
+  viewer.hidden = true;
+  document.body.classList.remove('viewer-open');
 }
 
 function localPublicCatalog() {
@@ -239,6 +286,15 @@ clearFilters?.addEventListener('click', () => {
   if (materialFilter) materialFilter.value = '';
   if (colorFilter) colorFilter.value = '';
   render();
+});
+grid?.addEventListener('click', event => {
+  const card = event.target.closest('[data-card-index]');
+  if (!card) return;
+  const item = currentRows[Number(card.dataset.cardIndex)];
+  if (item) openViewer(item);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeViewer();
 });
 
 fetch(catalogUrl).then(response => response.json()).then(data => {
