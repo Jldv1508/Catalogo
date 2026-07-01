@@ -110,11 +110,11 @@ function buildFilterTree() {
         .map(([materialKey, materialNode]) => {
           const colors = [...materialNode.colors.entries()]
             .sort((a, b) => a[1].label.localeCompare(b[1].label, 'es'))
-            .map(([colorKey, colorNode]) => `<label class="tree-row tree-color">
+            .map(([colorKey, colorNode]) => `<label class="tree-row tree-color" data-tree-label="${escapeHtml(`${colorKey} ${colorNode.label}`.toLowerCase())}">
               <input type="checkbox" name="treeFilter" value="${escapeHtml(nodeValue(typeKey, materialKey, colorKey))}">
               <span>${escapeHtml(colorNode.label)}</span><em>${colorNode.count}</em>
             </label>`).join('');
-          return `<details data-tree-node class="tree-node tree-material">
+          return `<details data-tree-node class="tree-node tree-material" data-tree-label="${escapeHtml(`${materialKey} ${materialNode.label}`.toLowerCase())}">
             <summary class="tree-row">
               <input type="checkbox" name="treeFilter" value="${escapeHtml(nodeValue(typeKey, materialKey))}">
               <span>${escapeHtml(materialNode.label)}</span><em>${materialNode.count}</em>
@@ -122,7 +122,7 @@ function buildFilterTree() {
             <div class="tree-children">${colors}</div>
           </details>`;
         }).join('');
-      return `<details data-tree-node class="tree-node tree-type">
+      return `<details data-tree-node class="tree-node tree-type" data-tree-label="${escapeHtml(`${typeKey} ${typeNode.label}`.toLowerCase())}">
         <summary class="tree-row">
           <input type="checkbox" name="treeFilter" value="${escapeHtml(nodeValue(typeKey))}">
           <span>${escapeHtml(typeNode.label)}</span><em>${typeNode.count}</em>
@@ -130,6 +130,36 @@ function buildFilterTree() {
         <div class="tree-children">${materials}</div>
       </details>`;
     }).join('');
+}
+
+function filterTreeBranches(query) {
+  const text = query.trim().toLowerCase();
+  const typeNodes = [...document.querySelectorAll('.tree-type')];
+  if (!text) {
+    typeNodes.forEach(typeNode => {
+      typeNode.hidden = false;
+      typeNode.querySelectorAll('.tree-material, .tree-color').forEach(node => { node.hidden = false; });
+    });
+    return;
+  }
+  typeNodes.forEach(typeNode => {
+    const typeMatches = (typeNode.dataset.treeLabel || '').includes(text);
+    let showType = typeMatches;
+    typeNode.querySelectorAll('.tree-material').forEach(materialNode => {
+      const materialMatches = typeMatches || (materialNode.dataset.treeLabel || '').includes(text);
+      let showMaterial = materialMatches;
+      materialNode.querySelectorAll('.tree-color').forEach(colorNode => {
+        const showColor = materialMatches || (colorNode.dataset.treeLabel || '').includes(text);
+        colorNode.hidden = !showColor;
+        showMaterial = showMaterial || showColor;
+      });
+      materialNode.hidden = !showMaterial;
+      if (showMaterial) materialNode.open = true;
+      showType = showType || showMaterial;
+    });
+    typeNode.hidden = !showType;
+    if (showType) typeNode.open = true;
+  });
 }
 
 function imageStyle(item) {
@@ -169,6 +199,7 @@ function render() {
     (!status?.value || (item.estado || 'disponible') === status.value) &&
     (!query || searchText(item).includes(query))
   );
+  filterTreeBranches(query);
   syncParentChecks();
   syncUrl();
   if (visibleCount) visibleCount.textContent = `${rows.length} de ${catalog.length}`;
