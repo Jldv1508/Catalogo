@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bisutería · jldv1508</title>
-  <link rel="stylesheet" href="styles.css?v=20260701-sort">
+  <link rel="stylesheet" href="styles.css?v=20260701-underscore-tree">
 </head>
 <body data-catalog-title="Catálogo de bisutería" data-catalog-url="catalogo-fotos.json?v=781-20260630" data-public-storage-key="jldv1508PublicCatalogBisuteriaV1" data-empty-title="Catálogo en blanco" data-empty-text="Estamos preparando una nueva selección de piezas.">
   <header>
@@ -31,10 +31,15 @@
         <strong>Filtros</strong>
         <span>Desplegables inteligentes</span>
       </div>
+      <div id="categoryTree" class="filter-tree" aria-label="Categorías con guion bajo"></div>
       <div id="smartFilters" class="smart-filters" aria-label="Filtros inteligentes">
         <label>
           <span>Tipo</span>
           <select id="typeFilter"><option value="">Todos los tipos</option></select>
+        </label>
+        <label>
+          <span>Subcategoría _</span>
+          <select id="variantFilter"><option value="">Todas las subcategorías</option></select>
         </label>
         <label>
           <span>Material</span>
@@ -48,6 +53,6 @@
     </aside>
     <main id="grid"></main>
   </div>
-  <script src="app.js?v=20260701-sort"></script>
+  <script src="app.js?v=20260701-underscore-tree"></script>
 </body>
 </html>

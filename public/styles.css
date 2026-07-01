@@ -40,6 +40,32 @@ button:hover, select:hover, input:focus { border-color:var(--gold); outline:none
 .tree-children { padding:0 8px 8px 26px; display:grid; gap:6px; }
 .tree-material { background:#fffdf9; }
 .tree-color { border-top:1px solid #f0ebe4; border-radius:0; }
+button.tree-select {
+  width:100%;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:9px 10px;
+  background:white;
+  color:var(--ink);
+  font:inherit;
+  font-weight:900;
+  text-align:left;
+}
+button.tree-select em {
+  font-style:normal;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+button.tree-select.active {
+  border-color:var(--gold);
+  background:#fffaf0;
+}
 [hidden] { display:none!important; }
 
 body:not(.home) main:not(.choice-screen) { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
