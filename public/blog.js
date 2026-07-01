@@ -23,8 +23,8 @@ const repos = [
     title: 'Catálogo público',
     text: 'Fuente de datos para las vistas públicas, con tarjetas compactas y selección por atributos.',
     meta: ['Filtros', 'Ordenación', 'Vista rápida'],
-    href: '/catalogo.html',
-    action: 'Ver portada',
+    href: '/conchas',
+    action: 'Ver conchas',
   },
 ];
 

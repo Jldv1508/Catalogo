@@ -539,7 +539,7 @@ function createPanel() {
     </div>
     <div class="public-edit-toolbar" data-edit-toolbar hidden>
       <div class="public-edit-tabs">
-        <a class="public-edit-tab" href="/catalogo.html">Entrada</a>
+        <a class="public-edit-tab" href="/conchas">Entrada</a>
         <a class="public-edit-tab" href="/bisuteria">Bisuteria</a>
         <a class="public-edit-tab" href="/conchas">Conchas</a>
         <a class="public-edit-tab" href="/blog">Blog</a>
