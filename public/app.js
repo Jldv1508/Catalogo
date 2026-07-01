@@ -2,6 +2,7 @@ const TYPE = { PUL: 'Pulsera', ANI: 'Anillo', PEN: 'Pendiente', COL: 'Collar', C
 const COLOR = { '000': 'Pendiente', '001': 'Multicolor', '002': 'Blanco', '003': 'Negro', '004': 'Rojo', '005': 'Plateado', '006': 'Verde', '007': 'Azul', '008': 'Marrón', '009': 'Multicolor', '010': 'Naranja', '011': 'Amarillo', '012': 'Morado', '013': 'Turquesa', '014': 'Rosa', '015': 'Gris', '016': 'Lila', '017': 'Fucsia', '999': 'Pendiente' };
 const MATERIAL = { '000': 'Pendiente', '001': 'Resina', '002': 'Latón', '003': 'Piedra', '004': 'Cristal', '005': 'Acero inoxidable', '006': 'Metal', '007': 'Cuero', '008': 'Tela', '009': 'Material mixto', '010': 'Perla', '011': 'Acero', '012': 'Plata', '013': 'Dorado / baño oro', '999': 'Pendiente' };
 const STATUS = { disponible: 'Disponible', reservado: 'Reservado', vendido: 'Vendido', oculto: 'Oculto' };
+const DEFAULT_TABLES = { types: TYPE, materials: MATERIAL, colors: COLOR };
 
 const grid = document.querySelector('#grid');
 const search = document.querySelector('#search');
@@ -16,6 +17,7 @@ const publicStorageKey = document.body.dataset.publicStorageKey || '';
 const emptyTitle = document.body.dataset.emptyTitle || 'Catálogo en blanco';
 const emptyText = document.body.dataset.emptyText || 'Estamos preparando una nueva selección de piezas.';
 let catalog = [];
+let activeTables = DEFAULT_TABLES;
 let syncingFilters = false;
 let currentRows = [];
 let originalIndexById = new Map();
@@ -32,20 +34,29 @@ function labelFor(table, key, fallback) {
   return fallback || table[key] || key || 'Pendiente';
 }
 
+function mergeTables(source) {
+  const base = source || {};
+  return {
+    types: { ...(DEFAULT_TABLES.types || {}), ...(base.types || {}) },
+    materials: { ...(DEFAULT_TABLES.materials || {}), ...(base.materials || {}) },
+    colors: { ...(DEFAULT_TABLES.colors || {}), ...(base.colors || {}) },
+  };
+}
+
 function cleanName(value) {
   return String(value || '').trim();
 }
 
 function typeName(item) {
-  return TYPE[itemType(item)] || cleanName(item.tipo_nombre) || 'Tipo pendiente';
+  return activeTables.types[itemType(item)] || cleanName(item.tipo_nombre) || 'Tipo pendiente';
 }
 
 function materialName(item) {
-  return cleanName(item.material_nombre) || MATERIAL[itemMaterial(item)] || 'Material pendiente';
+  return cleanName(item.material_nombre) || activeTables.materials[itemMaterial(item)] || 'Material pendiente';
 }
 
 function colorName(item) {
-  return cleanName(item.color_nombre) || COLOR[itemColor(item)] || 'Color pendiente';
+  return cleanName(item.color_nombre) || activeTables.colors[itemColor(item)] || 'Color pendiente';
 }
 
 function itemType(item) {
@@ -71,7 +82,7 @@ function searchText(item) {
     item.idf,
     item.nombre_comercial,
     item.tipo,
-    TYPE[item.tipo],
+    activeTables.types[item.tipo],
     item.material,
     item.material_nombre,
     item.color,
@@ -271,11 +282,13 @@ function closeViewer() {
   document.body.classList.remove('viewer-open');
 }
 
-function localPublicCatalog() {
+function localPublicData() {
   if (!publicStorageKey) return null;
   try {
     const payload = JSON.parse(localStorage.getItem(publicStorageKey) || 'null');
-    return Array.isArray(payload?.items) ? payload.items : null;
+    if (Array.isArray(payload?.items)) return payload;
+    if (Array.isArray(payload)) return { items: payload };
+    return null;
   } catch {
     return null;
   }
@@ -309,7 +322,9 @@ document.addEventListener('keydown', event => {
 });
 
 fetch(catalogUrl).then(response => response.json()).then(data => {
-  catalog = localPublicCatalog() || data;
+  const localData = localPublicData();
+  if (localData?.tables) activeTables = mergeTables(localData.tables);
+  catalog = localData?.items || data;
   originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
   syncSmartFilters();
   restoreUrlFilters();
