@@ -1,13 +1,15 @@
-const DEFAULT_USER = 'jldv1508';
-const DEFAULT_PASSWORD = 'Jldv1508-Edicion-7Qk4!mP9';
 const STORAGE_KEY = 'jldv1508EditUnlocked';
 
 function getConfig() {
-  const body = document.body;
-  return {
-    user: body.dataset.editUser || DEFAULT_USER,
-    password: body.dataset.editPassword || DEFAULT_PASSWORD,
-  };
+  return fetch('/api/edit-credentials', { cache: 'no-store' })
+    .then(response => {
+      if (!response.ok) throw new Error(`edit-credentials:${response.status}`);
+      return response.json();
+    })
+    .then(payload => ({
+      user: String(payload?.user || ''),
+      password: String(payload?.password || ''),
+    }));
 }
 
 function getMount() {
@@ -92,11 +94,19 @@ function createPanel() {
     }
   };
 
-  form.addEventListener('submit', event => {
+  form.addEventListener('submit', async event => {
     event.preventDefault();
     const data = new FormData(form);
-    const { user, password } = getConfig();
-    const ok = String(data.get('user') || '') === user && String(data.get('password') || '') === password;
+    let config;
+    try {
+      config = await getConfig();
+    } catch {
+      state.textContent = 'No se pueden cargar credenciales';
+      panel.classList.add('is-open');
+      panel.hidden = false;
+      return;
+    }
+    const ok = String(data.get('user') || '') === config.user && String(data.get('password') || '') === config.password;
     if (!ok) {
       state.textContent = 'Credenciales incorrectas';
       panel.classList.add('is-open');
