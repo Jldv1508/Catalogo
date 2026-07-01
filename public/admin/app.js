@@ -695,6 +695,28 @@ function download(filename, text, type = 'text/plain') {
     a.remove();
   }, 1000);
 }
+function publicCatalogJson() {
+  return JSON.stringify(publicCatalogRows(), null, 2);
+}
+function updatePublicPreview(downloadFile = false) {
+  save();
+  if (!PUBLIC_STORAGE_KEY) {
+    alert('Esta pagina no tiene configurada una clave publica.');
+    return false;
+  }
+  const payload = {
+    createdAt: new Date().toISOString(),
+    items: publicCatalogRows(),
+  };
+  localStorage.setItem(PUBLIC_STORAGE_KEY, JSON.stringify(payload));
+  if (downloadFile) {
+    download(PUBLIC_FILE, publicCatalogJson(), 'application/json');
+  }
+  alert(downloadFile
+    ? 'Vista publica actualizada en este navegador y archivo descargado.'
+    : 'Vista publica actualizada en este navegador. Abre la pagina publica para revisar los cambios.');
+  return true;
+}
 function safeScriptJson(value) {
   return JSON.stringify(value, null, 2).replace(/</g, '\\u003c');
 }
@@ -825,20 +847,11 @@ function parseBackupFile(text) {
 document.getElementById('saveBtn').addEventListener('click', () => { save(); alert('Guardado en este navegador.'); });
 document.getElementById('csvBtn').addEventListener('click', () => { save(); download('renombrado-jldv1508.csv', toCsv(), 'text/csv'); });
 document.getElementById('publishPreviewBtn')?.addEventListener('click', () => {
-  save();
-  if (!PUBLIC_STORAGE_KEY) {
-    alert('Esta pagina no tiene configurada una clave publica.');
-    return;
-  }
-  localStorage.setItem(PUBLIC_STORAGE_KEY, JSON.stringify({
-    createdAt: new Date().toISOString(),
-    items: publicCatalogRows(),
-  }));
-  alert('Vista publica actualizada en este navegador. Abre la pagina publica para revisar los cambios.');
+  updatePublicPreview(true);
 });
 document.getElementById('publicJsonBtn')?.addEventListener('click', () => {
   save();
-  download(PUBLIC_FILE, JSON.stringify(publicCatalogRows(), null, 2), 'application/json');
+  download(PUBLIC_FILE, publicCatalogJson(), 'application/json');
 });
 document.getElementById('jsonBtn').addEventListener('click', () => {
   save();
