@@ -11,10 +11,10 @@ const repos = [
   {
     tag: 'Utilidad',
     lang: 'HTML',
-    title: 'Cabecera de edición',
-    text: 'Acceso mínimo para abrir la zona de edición sin arrastrar el panel antiguo.',
-    meta: ['Acceso', 'Ligero', 'Edición'],
-    href: '/admin',
+    title: 'Edición pública',
+    text: 'Acceso mínimo para abrir la zona de edición pública sin un panel separado.',
+    meta: ['Acceso', 'Ligero', 'Público'],
+    href: '/edicion',
     action: 'Abrir edición',
   },
   {
@@ -30,24 +30,24 @@ const repos = [
 
 const programs = [
   {
-    title: 'Cabecera de edición',
-    text: 'Entrada mínima para abrir el trabajo de edición del proyecto.',
-    href: '/admin',
-  },
-  {
-    title: 'Cabecera de conchas',
-    text: 'Acceso ligero para la gestión de conchas sin panel pesado.',
-    href: '/admin/conchas',
+    title: 'Edición pública',
+    text: 'Entrada mínima para abrir el trabajo de edición del proyecto sobre la vista pública.',
+    href: '/edicion',
   },
   {
     title: 'Bisutería pública',
-    text: 'Vista pública con árbol de categorías, filtros desplegables y visor ampliado.',
+    text: 'Acceso ligero para gestionar la vista de bisutería sin panel pesado.',
     href: '/bisuteria',
   },
   {
     title: 'Conchas públicas',
-    text: 'Interfaz ligera para consultar piezas, ordenarlas y localizar variantes rápido.',
+    text: 'Vista pública con árbol de categorías, filtros desplegables y visor ampliado.',
     href: '/conchas',
+  },
+  {
+    title: 'Blog',
+    text: 'Resumen de repositorios, programas y accesos de trabajo.',
+    href: '/blog',
   },
 ];
 

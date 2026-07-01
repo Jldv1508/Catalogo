@@ -121,7 +121,8 @@ body:not(.home) main:not(.choice-screen) { display:grid; grid-template-columns:r
 .home-topbar { position:fixed; top:0; left:0; right:0; z-index:12; display:flex; justify-content:space-between; align-items:center; gap:18px; padding:18px clamp(18px,4vw,52px); background:rgba(31,29,25,.88); color:white; border:0; backdrop-filter:blur(14px); }
 .home-logo { font-family:Georgia,serif; font-size:24px; font-weight:700; }
 .home-edit,
-.blog-edit {
+.blog-edit,
+.catalog-edit {
   min-height:38px;
   display:inline-flex;
   align-items:center;
@@ -343,6 +344,11 @@ body:not(.home) main:not(.choice-screen) { display:grid; grid-template-columns:r
   font-weight:800;
 }
 .blog-edit { margin-left:auto; }
+.brand-actions {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
 .blog-main {
   display:grid;
   gap:24px;
