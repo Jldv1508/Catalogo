@@ -1,5 +1,5 @@
-const DEFAULT_USER = 'admin';
-const DEFAULT_PASSWORD = 'password';
+const DEFAULT_USER = 'jldv1508';
+const DEFAULT_PASSWORD = 'Jldv1508-Edicion-7Qk4!mP9';
 const STORAGE_KEY = 'jldv1508EditUnlocked';
 
 function getConfig() {
