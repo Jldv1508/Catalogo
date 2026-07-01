@@ -132,24 +132,28 @@ function buildFilterTree() {
     }).join('');
 }
 
-function filterTreeBranches(query) {
+function filterTreeBranches(rows, query) {
+  const visibleTypes = new Set();
+  const visibleMaterials = new Set();
+  const visibleColors = new Set();
+  rows.forEach(item => {
+    visibleTypes.add(nodeValue(item.tipo));
+    visibleMaterials.add(nodeValue(item.tipo, item.material));
+    visibleColors.add(nodeValue(item.tipo, item.material, item.color));
+  });
   const text = query.trim().toLowerCase();
   const typeNodes = [...document.querySelectorAll('.tree-type')];
-  if (!text) {
-    typeNodes.forEach(typeNode => {
-      typeNode.hidden = false;
-      typeNode.querySelectorAll('.tree-material, .tree-color').forEach(node => { node.hidden = false; });
-    });
-    return;
-  }
   typeNodes.forEach(typeNode => {
-    const typeMatches = (typeNode.dataset.treeLabel || '').includes(text);
-    let showType = typeMatches;
+    const typeValue = typeNode.querySelector(':scope > summary input[name="treeFilter"]')?.value || '';
+    const typeMatchesText = !text || (typeNode.dataset.treeLabel || '').includes(text);
+    let showType = visibleTypes.has(typeValue) && typeMatchesText;
     typeNode.querySelectorAll('.tree-material').forEach(materialNode => {
-      const materialMatches = typeMatches || (materialNode.dataset.treeLabel || '').includes(text);
-      let showMaterial = materialMatches;
+      const materialValue = materialNode.querySelector(':scope > summary input[name="treeFilter"]')?.value || '';
+      const materialMatchesText = typeMatchesText || (materialNode.dataset.treeLabel || '').includes(text);
+      let showMaterial = visibleMaterials.has(materialValue) && materialMatchesText;
       materialNode.querySelectorAll('.tree-color').forEach(colorNode => {
-        const showColor = materialMatches || (colorNode.dataset.treeLabel || '').includes(text);
+        const colorValue = colorNode.querySelector('input[name="treeFilter"]')?.value || '';
+        const showColor = visibleColors.has(colorValue) && (materialMatchesText || (colorNode.dataset.treeLabel || '').includes(text));
         colorNode.hidden = !showColor;
         showMaterial = showMaterial || showColor;
       });
@@ -220,7 +224,7 @@ function render() {
     (!status?.value || (item.estado || 'disponible') === status.value) &&
     (!query || searchText(item).includes(query))
   );
-  filterTreeBranches(query);
+  filterTreeBranches(rows, query);
   syncParentChecks();
   syncUrl();
   if (visibleCount) visibleCount.textContent = `${rows.length} de ${catalog.length}`;
