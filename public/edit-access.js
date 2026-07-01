@@ -617,14 +617,13 @@ function createPanel() {
   return panel;
 }
 
-function togglePanel() {
+function openPanel() {
   const panel = createPanel();
-  const opened = panel.classList.toggle('is-open');
-  panel.hidden = !opened && !isUnlocked();
-  if (opened) {
-    const input = panel.querySelector('[name="user"]');
-    if (input) input.focus();
-  }
+  panel.classList.add('is-open');
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const input = panel.querySelector('[name="user"]');
+  if (input && !isUnlocked()) input.focus();
 }
 
 function initTriggers() {
@@ -633,13 +632,13 @@ function initTriggers() {
     trigger.setAttribute('tabindex', '0');
     trigger.addEventListener('click', event => {
       event.preventDefault();
-      togglePanel();
+      openPanel();
       if (isUnlocked()) ensureWorkspace();
     });
     trigger.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        togglePanel();
+        openPanel();
         if (isUnlocked()) ensureWorkspace();
       }
     });
