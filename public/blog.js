@@ -3,7 +3,7 @@ const repos = [
     tag: 'Principal',
     lang: 'Next.js',
     title: 'Catálogo jldv1508',
-    text: 'Catálogo de bisutería y conchas con portada, filtros inteligentes y editor administrativo.',
+    text: 'Catálogo de bisutería y conchas con portada, filtros inteligentes y una cabecera mínima de edición.',
     meta: ['GitHub', 'Vercel', 'Catálogo'],
     href: 'https://github.com/Jldv1508/Catalogo',
     action: 'Abrir código',
@@ -11,11 +11,11 @@ const repos = [
   {
     tag: 'Utilidad',
     lang: 'HTML',
-    title: 'Editor offline',
-    text: 'Versión descargable para editar contenido fuera de línea y devolverlo al proyecto.',
-    meta: ['Exportación', 'Backups', 'Edición masiva'],
+    title: 'Cabecera de edición',
+    text: 'Acceso mínimo para abrir la zona de edición sin arrastrar el panel antiguo.',
+    meta: ['Acceso', 'Ligero', 'Edición'],
     href: '/admin',
-    action: 'Abrir admin',
+    action: 'Abrir edición',
   },
   {
     tag: 'Contenido',
@@ -30,13 +30,13 @@ const repos = [
 
 const programs = [
   {
-    title: 'Admin de bisutería',
-    text: 'Renombrado, publicación pública, exportación y edición por lotes.',
+    title: 'Cabecera de edición',
+    text: 'Entrada mínima para abrir el trabajo de edición del proyecto.',
     href: '/admin',
   },
   {
-    title: 'Admin de conchas',
-    text: 'Gestión paralela para el catálogo de conchas con el mismo flujo operativo.',
+    title: 'Cabecera de conchas',
+    text: 'Acceso ligero para la gestión de conchas sin panel pesado.',
     href: '/admin/conchas',
   },
   {
