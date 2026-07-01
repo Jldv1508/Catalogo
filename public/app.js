@@ -26,6 +26,22 @@ function labelFor(table, key, fallback) {
   return fallback || table[key] || key || 'Pendiente';
 }
 
+function cleanName(value) {
+  return String(value || '').trim();
+}
+
+function typeName(item) {
+  return TYPE[itemType(item)] || cleanName(item.tipo_nombre) || 'Tipo pendiente';
+}
+
+function materialName(item) {
+  return cleanName(item.material_nombre) || MATERIAL[itemMaterial(item)] || 'Material pendiente';
+}
+
+function colorName(item) {
+  return cleanName(item.color_nombre) || COLOR[itemColor(item)] || 'Color pendiente';
+}
+
 function itemType(item) {
   return item.tipo || 'PIE';
 }
@@ -106,17 +122,17 @@ function syncSmartFilters() {
   fillSelect(
     typeFilter,
     'Todos los tipos',
-    optionRows(rowsForOptions('type'), itemType, item => labelFor(TYPE, itemType(item)))
+    optionRows(rowsForOptions('type'), itemType, typeName)
   );
   fillSelect(
     materialFilter,
     'Todos los materiales',
-    optionRows(rowsForOptions('material'), itemMaterial, item => item.material_nombre || labelFor(MATERIAL, itemMaterial(item)))
+    optionRows(rowsForOptions('material'), itemMaterial, materialName)
   );
   fillSelect(
     colorFilter,
     'Todos los colores',
-    optionRows(rowsForOptions('color'), itemColor, item => item.color_nombre || labelFor(COLOR, itemColor(item)))
+    optionRows(rowsForOptions('color'), itemColor, colorName)
   );
   syncingFilters = false;
 }
@@ -184,9 +200,9 @@ function render() {
         <summary>Ver datos</summary>
         <dl>
           <div><dt>Código</dt><dd>${escapeHtml(item.codigo || '')}</dd></div>
-          <div><dt>Tipo</dt><dd>${escapeHtml(labelFor(TYPE, item.tipo))}</dd></div>
-          <div><dt>Material</dt><dd>${escapeHtml(item.material_nombre || labelFor(MATERIAL, item.material))}</dd></div>
-          <div><dt>Color</dt><dd>${escapeHtml(item.color_nombre || labelFor(COLOR, item.color))}</dd></div>
+          <div><dt>Tipo</dt><dd>${escapeHtml(typeName(item))}</dd></div>
+          <div><dt>Material</dt><dd>${escapeHtml(materialName(item))}</dd></div>
+          <div><dt>Color</dt><dd>${escapeHtml(colorName(item))}</dd></div>
           <div><dt>Precio</dt><dd>${priceText(item.precio_eur) ? escapeHtml(priceText(item.precio_eur)) : 'Precio pendiente'}</dd></div>
           <div><dt>Estado</dt><dd>${escapeHtml(STATUS[item.estado] || item.estado || 'Disponible')}${item.stock ? ` · Stock ${escapeHtml(item.stock)}` : ''}</dd></div>
           ${item.medidas ? `<div><dt>Medidas</dt><dd>${escapeHtml(item.medidas)}</dd></div>` : ''}
