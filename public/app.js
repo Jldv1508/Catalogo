@@ -216,6 +216,7 @@ function render() {
       <img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo)}" loading="lazy" style="${imageStyle(item)}">
     </button>
     <div class="card-info">
+      <span class="card-type">${escapeHtml(typeName(item))}</span>
       <strong>${escapeHtml(cardTitle(item))}</strong>
     </div>
   </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
@@ -230,8 +231,10 @@ function ensureViewer() {
       <button class="item-viewer-close" type="button" data-close-viewer aria-label="Cerrar">×</button>
       <div class="item-viewer-image"></div>
       <div class="item-viewer-info">
-        <p class="item-viewer-kicker">Ficha de pieza</p>
-        <h2 id="itemViewerTitle"></h2>
+        <div class="item-viewer-head">
+          <p class="item-viewer-kicker">Ficha de pieza</p>
+          <h2 id="itemViewerTitle"></h2>
+        </div>
         <div class="item-viewer-details"></div>
       </div>
     </article>
