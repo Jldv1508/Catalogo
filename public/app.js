@@ -228,13 +228,19 @@ function render() {
     <div class="image"><img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo)}" loading="lazy" style="${imageStyle(item)}"></div>
     <div class="card-info">
       <strong>${escapeHtml(cardTitle(item))}</strong>
-      <span class="card-code">${escapeHtml(item.codigo || '')}</span>
-      <span class="card-meta">${escapeHtml(cardMeta(item))}</span>
-      ${itemDescription(item) ? `<p>${escapeHtml(itemDescription(item))}</p>` : ''}
-      <div class="card-foot">
-        ${priceText(item.precio_eur) ? `<b>${escapeHtml(priceText(item.precio_eur))}</b>` : '<b>Precio pendiente</b>'}
-        <em>${escapeHtml(STATUS[item.estado] || item.estado || 'Disponible')}${item.stock ? ` · Stock ${escapeHtml(item.stock)}` : ''}</em>
-      </div>
+      <details class="card-details">
+        <summary>Ver datos</summary>
+        <dl>
+          <div><dt>Código</dt><dd>${escapeHtml(item.codigo || '')}</dd></div>
+          <div><dt>Tipo</dt><dd>${escapeHtml(labelFor(TYPE, item.tipo))}</dd></div>
+          <div><dt>Material</dt><dd>${escapeHtml(item.material_nombre || labelFor(MATERIAL, item.material))}</dd></div>
+          <div><dt>Color</dt><dd>${escapeHtml(item.color_nombre || labelFor(COLOR, item.color))}</dd></div>
+          <div><dt>Precio</dt><dd>${priceText(item.precio_eur) ? escapeHtml(priceText(item.precio_eur)) : 'Precio pendiente'}</dd></div>
+          <div><dt>Estado</dt><dd>${escapeHtml(STATUS[item.estado] || item.estado || 'Disponible')}${item.stock ? ` · Stock ${escapeHtml(item.stock)}` : ''}</dd></div>
+          ${item.medidas ? `<div><dt>Medidas</dt><dd>${escapeHtml(item.medidas)}</dd></div>` : ''}
+          ${item.descripcion ? `<div><dt>Descripción</dt><dd>${escapeHtml(item.descripcion)}</dd></div>` : ''}
+        </dl>
+      </details>
     </div>
   </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
 }
