@@ -191,6 +191,27 @@ function searchText(item) {
   ].join(' ').toLowerCase();
 }
 
+function priceText(value) {
+  const number = Number(String(value || '').replace(',', '.'));
+  return Number.isFinite(number) && number > 0 ? `${number.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : '';
+}
+
+function cardTitle(item) {
+  return item.nombre_comercial || item.codigo || item.referencia_csv || 'Pieza';
+}
+
+function cardMeta(item) {
+  return [
+    labelFor(TYPE, item.tipo),
+    item.material_nombre || labelFor(MATERIAL, item.material),
+    item.color_nombre || labelFor(COLOR, item.color),
+  ].filter(Boolean).join(' · ');
+}
+
+function itemDescription(item) {
+  return item.descripcion || item.medidas || '';
+}
+
 function render() {
   const query = search.value.trim().toLowerCase();
   const selectedValues = selectedTreeValues();
@@ -205,6 +226,16 @@ function render() {
   if (visibleCount) visibleCount.textContent = `${rows.length} de ${catalog.length}`;
   grid.innerHTML = rows.length ? rows.map(item => `<article class="card type-${escapeHtml(item.tipo)}">
     <div class="image"><img src="${escapeHtml(item.archivo)}" alt="${escapeHtml(item.codigo)}" loading="lazy" style="${imageStyle(item)}"></div>
+    <div class="card-info">
+      <strong>${escapeHtml(cardTitle(item))}</strong>
+      <span class="card-code">${escapeHtml(item.codigo || '')}</span>
+      <span class="card-meta">${escapeHtml(cardMeta(item))}</span>
+      ${itemDescription(item) ? `<p>${escapeHtml(itemDescription(item))}</p>` : ''}
+      <div class="card-foot">
+        ${priceText(item.precio_eur) ? `<b>${escapeHtml(priceText(item.precio_eur))}</b>` : '<b>Precio pendiente</b>'}
+        <em>${escapeHtml(STATUS[item.estado] || item.estado || 'Disponible')}${item.stock ? ` · Stock ${escapeHtml(item.stock)}` : ''}</em>
+      </div>
+    </div>
   </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
 }
 
