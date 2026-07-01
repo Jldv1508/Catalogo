@@ -631,8 +631,11 @@ function initTriggers() {
     trigger.setAttribute('role', 'button');
     trigger.setAttribute('tabindex', '0');
     trigger.addEventListener('click', event => {
-      event.preventDefault();
+      if (trigger.tagName !== 'A') event.preventDefault();
       openPanel();
+      if (trigger.tagName === 'A') {
+        history.replaceState(null, '', '#publicEditPanel');
+      }
       if (isUnlocked()) ensureWorkspace();
     });
     trigger.addEventListener('keydown', event => {
@@ -646,6 +649,7 @@ function initTriggers() {
 }
 
 function init() {
+  createPanel();
   initTriggers();
   if (isUnlocked()) {
     const panel = createPanel();
