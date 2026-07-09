@@ -8,10 +8,6 @@ const SAVED_FILTERS_KEY = 'jldv1508CatalogSavedFiltersV2';
 const grid = document.querySelector('#grid');
 const search = document.querySelector('#search');
 const sortOrder = document.querySelector('#sortOrder');
-const priceMin = document.querySelector('#priceMin');
-const priceMax = document.querySelector('#priceMax');
-const priceFilterMeta = document.querySelector('#priceFilterMeta');
-const priceFilterNote = document.querySelector('#priceFilterNote');
 const clearFilters = document.querySelector('#clearFilters');
 const visibleCount = document.querySelector('#visibleCount');
 const resultSummary = document.querySelector('#resultSummary');
@@ -136,12 +132,6 @@ function itemColor(item) {
   return item.color || '000';
 }
 
-function itemPrice(item) {
-  const raw = item.precio_eur ?? item.price ?? '';
-  const value = Number(String(raw).replace(',', '.'));
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
 function searchText(item) {
   return normalizeText([
     item.codigo,
@@ -176,25 +166,6 @@ function baseRows() {
   return catalog.filter(item => matchesQuery(item));
 }
 
-function priceFilters() {
-  const min = Number(String(priceMin?.value || '').replace(',', '.'));
-  const max = Number(String(priceMax?.value || '').replace(',', '.'));
-  return {
-    min: Number.isFinite(min) && min >= 0 ? min : null,
-    max: Number.isFinite(max) && max >= 0 ? max : null,
-  };
-}
-
-function matchesPrice(item) {
-  const { min, max } = priceFilters();
-  if (min == null && max == null) return true;
-  const price = itemPrice(item);
-  if (price == null) return false;
-  if (min != null && price < min) return false;
-  if (max != null && price > max) return false;
-  return true;
-}
-
 function matchesGroup(group, value, ignoreGroup) {
   if (group === ignoreGroup) return true;
   const selected = activeSelection(group);
@@ -203,7 +174,6 @@ function matchesGroup(group, value, ignoreGroup) {
 
 function rowsForOptions(ignoreGroup) {
   return baseRows().filter(item =>
-    matchesPrice(item) &&
     matchesGroup('type', itemType(item), ignoreGroup) &&
     matchesGroup('material', itemMaterial(item), ignoreGroup) &&
     matchesGroup('color', itemColor(item), ignoreGroup)
@@ -212,7 +182,6 @@ function rowsForOptions(ignoreGroup) {
 
 function selectedRows() {
   return baseRows().filter(item =>
-    matchesPrice(item) &&
     matchesGroup('type', itemType(item)) &&
     matchesGroup('material', itemMaterial(item)) &&
     matchesGroup('color', itemColor(item))
@@ -274,8 +243,6 @@ function syncUrl() {
   if (serializeSelection(activeSelection('type'))) params.set('tipo', serializeSelection(activeSelection('type')));
   if (serializeSelection(activeSelection('material'))) params.set('material', serializeSelection(activeSelection('material')));
   if (serializeSelection(activeSelection('color'))) params.set('color', serializeSelection(activeSelection('color')));
-  if (priceMin?.value.trim()) params.set('precioMin', priceMin.value.trim());
-  if (priceMax?.value.trim()) params.set('precioMax', priceMax.value.trim());
   if (sortOrder?.value && sortOrder.value !== 'original') params.set('sort', sortOrder.value);
   history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}`);
 }
@@ -286,8 +253,6 @@ function restoreUrlFilters() {
   filterSelections.type = parseSelection(params.get('tipo'));
   filterSelections.material = parseSelection(params.get('material'));
   filterSelections.color = parseSelection(params.get('color'));
-  if (priceMin) priceMin.value = params.get('precioMin') || '';
-  if (priceMax) priceMax.value = params.get('precioMax') || '';
   if (sortOrder) sortOrder.value = params.get('sort') || 'original';
 }
 
@@ -337,24 +302,6 @@ function detailsHtml(item) {
   return `<dl>${itemDetails(item).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`;
 }
 
-function availablePrices() {
-  return catalog.map(itemPrice).filter(price => price != null);
-}
-
-function updatePriceFilterMeta() {
-  const prices = availablePrices();
-  if (!priceFilterMeta || !priceFilterNote) return;
-  if (!prices.length) {
-    priceFilterMeta.textContent = 'Sin precios';
-    priceFilterNote.textContent = 'El filtro se activa cuando las piezas tengan precio cargado.';
-    return;
-  }
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  priceFilterMeta.textContent = `${min.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € - ${max.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-  priceFilterNote.textContent = `${prices.length.toLocaleString('es-ES')} piezas tienen precio disponible para filtrar.`;
-}
-
 function selectedOptionLabel(select, fallback = '') {
   const option = [...(select?.options || [])].find(current => current.value === select.value);
   return option ? option.textContent : fallback;
@@ -366,9 +313,6 @@ function activeFilterEntries() {
   activeSelection('type').forEach(key => entries.push({ key: `type:${key}`, label: `Tipo: ${groupLabel('type', key)}` }));
   activeSelection('material').forEach(key => entries.push({ key: `material:${key}`, label: `Material: ${groupLabel('material', key)}` }));
   activeSelection('color').forEach(key => entries.push({ key: `color:${key}`, label: `Color: ${groupLabel('color', key)}` }));
-  const { min, max } = priceFilters();
-  if (min != null) entries.push({ key: 'priceMin', label: `Desde: ${min.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
-  if (max != null) entries.push({ key: 'priceMax', label: `Hasta: ${max.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
   if (sortOrder?.value && sortOrder.value !== 'original') entries.push({ key: 'sort', label: `Orden: ${selectedOptionLabel(sortOrder, sortOrder.value)}` });
   return entries;
 }
@@ -419,8 +363,6 @@ function renderResultSummary(totalRows, visibleRows) {
     const tokens = queryTokens();
     if (!hasActiveFilters()) {
       resultHint.textContent = 'Usa la búsqueda, la multiselección y el panel lateral para refinar el catálogo.';
-    } else if ((priceFilters().min != null || priceFilters().max != null) && !availablePrices().length) {
-      resultHint.textContent = 'Ahora mismo el catálogo base no tiene precios cargados, así que ese filtro no devolverá piezas hasta que haya importes.';
     } else if (!visibleRows.length) {
       resultHint.textContent = 'No hay coincidencias con los filtros actuales. Puedes quitar alguno, abrir un favorito o limpiar todo.';
     } else if (tokens.length > 1) {
@@ -442,16 +384,12 @@ function clearAllSelections() {
 function clearAllFilters() {
   if (search) search.value = '';
   if (sortOrder) sortOrder.value = 'original';
-  if (priceMin) priceMin.value = '';
-  if (priceMax) priceMax.value = '';
   clearAllSelections();
 }
 
 function removeFilter(key) {
   if (key === 'search' && search) search.value = '';
   if (key === 'sort' && sortOrder) sortOrder.value = 'original';
-  if (key === 'priceMin' && priceMin) priceMin.value = '';
-  if (key === 'priceMax' && priceMax) priceMax.value = '';
   if (key.includes(':')) {
     const [group, value] = key.split(':');
     activeSelection(group)?.delete(value);
@@ -473,8 +411,6 @@ function getPresetPayload() {
   return {
     q: search?.value.trim() || '',
     sort: sortOrder?.value || 'original',
-    priceMin: priceMin?.value.trim() || '',
-    priceMax: priceMax?.value.trim() || '',
     type: [...activeSelection('type')],
     material: [...activeSelection('material')],
     color: [...activeSelection('color')],
@@ -485,8 +421,6 @@ function applyPreset(preset) {
   const payload = preset?.filters || {};
   if (search) search.value = payload.q || '';
   if (sortOrder) sortOrder.value = payload.sort || 'original';
-  if (priceMin) priceMin.value = payload.priceMin || '';
-  if (priceMax) priceMax.value = payload.priceMax || '';
   filterSelections.type = new Set(payload.type || []);
   filterSelections.material = new Set(payload.material || []);
   filterSelections.color = new Set(payload.color || []);
@@ -540,7 +474,6 @@ function presetSummary(preset) {
   if (filters.type?.length) parts.push(`${filters.type.length} tipos`);
   if (filters.material?.length) parts.push(`${filters.material.length} materiales`);
   if (filters.color?.length) parts.push(`${filters.color.length} colores`);
-  if (filters.priceMin || filters.priceMax) parts.push('Precio');
   if (filters.sort && filters.sort !== 'original') parts.push(`Orden ${filters.sort}`);
   return parts.join(' · ') || 'Sin detalle';
 }
@@ -580,7 +513,6 @@ function toggleFilterValue(group, value) {
 
 function render() {
   syncFilterGroups();
-  updatePriceFilterMeta();
   renderSavedFilters();
   const rows = sortRows(selectedRows());
   currentRows = rows;
@@ -704,8 +636,6 @@ function refreshPublicCatalog() {
 
 search?.addEventListener('input', render);
 sortOrder?.addEventListener('input', render);
-priceMin?.addEventListener('input', render);
-priceMax?.addEventListener('input', render);
 clearFilters?.addEventListener('click', () => {
   clearAllFilters();
   render();
