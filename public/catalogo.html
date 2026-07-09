@@ -25,20 +25,41 @@
         <option value="material">Material</option>
         <option value="color">Color</option>
       </select>
+      <button id="filterToggle" class="filter-toggle-button" type="button" aria-expanded="false" aria-controls="filterPanel">Filtros</button>
       <button id="clearFilters" type="button">Limpiar</button>
     </div>
   </header>
   <section class="catalog-shell">
-    <aside class="filter-panel" aria-label="Filtros del catálogo">
+    <button class="filter-panel-backdrop" id="filterPanelBackdrop" type="button" hidden aria-label="Cerrar filtros"></button>
+    <aside class="filter-panel" aria-label="Filtros del catálogo" id="filterPanel">
       <div class="filter-panel-head">
         <strong>Filtros</strong>
-        <span>Catálogo público</span>
+        <div class="filter-panel-head-actions">
+          <span id="filterStateSummary">Sin filtros</span>
+          <button id="filterClose" class="filter-close-button" type="button" aria-label="Cerrar filtros">Cerrar</button>
+        </div>
       </div>
-      <div class="smart-filters">
-        <label><span>Tipo</span><select id="typeFilter"><option value="">Todos los tipos</option></select></label>
-        <label><span>Material</span><select id="materialFilter"><option value="">Todos los materiales</option></select></label>
-        <label><span>Color</span><select id="colorFilter"><option value="">Todos los colores</option></select></label>
-      </div>
+      <section class="filter-multi-group" aria-labelledby="typeGroupTitle">
+        <div class="filter-chip-group-head">
+          <strong id="typeGroupTitle">Tipo</strong>
+          <span id="typeGroupMeta">Todas</span>
+        </div>
+        <div class="filter-toggle-grid" id="typeFilterChips"></div>
+      </section>
+      <section class="filter-multi-group" aria-labelledby="materialGroupTitle">
+        <div class="filter-chip-group-head">
+          <strong id="materialGroupTitle">Material</strong>
+          <span id="materialGroupMeta">Todos</span>
+        </div>
+        <div class="filter-toggle-grid" id="materialFilterChips"></div>
+      </section>
+      <section class="filter-multi-group" aria-labelledby="colorGroupTitle">
+        <div class="filter-chip-group-head">
+          <strong id="colorGroupTitle">Color</strong>
+          <span id="colorGroupMeta">Todos</span>
+        </div>
+        <div class="filter-toggle-grid" id="colorFilterChips"></div>
+      </section>
       <section class="price-filter-box" aria-labelledby="priceFilterTitle">
         <div class="filter-chip-group-head">
           <strong id="priceFilterTitle">Precio</strong>
@@ -56,35 +77,23 @@
         </div>
         <p class="price-filter-note" id="priceFilterNote">El filtro se activa cuando las piezas tengan precio cargado.</p>
       </section>
-      <div class="filter-shortcuts">
-        <section class="filter-chip-group" aria-labelledby="typeShortcutTitle">
-          <div class="filter-chip-group-head">
-            <strong id="typeShortcutTitle">Tipos frecuentes</strong>
-            <span>Acceso rápido</span>
-          </div>
-          <div class="filter-chips" id="typeShortcutChips"></div>
-        </section>
-        <section class="filter-chip-group" aria-labelledby="materialShortcutTitle">
-          <div class="filter-chip-group-head">
-            <strong id="materialShortcutTitle">Materiales frecuentes</strong>
-            <span>Acceso rápido</span>
-          </div>
-          <div class="filter-chips" id="materialShortcutChips"></div>
-        </section>
-        <section class="filter-chip-group" aria-labelledby="colorShortcutTitle">
-          <div class="filter-chip-group-head">
-            <strong id="colorShortcutTitle">Colores frecuentes</strong>
-            <span>Acceso rápido</span>
-          </div>
-          <div class="filter-chips" id="colorShortcutChips"></div>
-        </section>
-      </div>
+      <section class="saved-filter-box" aria-labelledby="savedFiltersTitle">
+        <div class="filter-chip-group-head">
+          <strong id="savedFiltersTitle">Favoritos</strong>
+          <button id="saveCurrentFilters" class="save-filter-button" type="button">Guardar actual</button>
+        </div>
+        <p class="price-filter-note">Guarda combinaciones de búsqueda, filtros, precio y orden para reutilizarlas.</p>
+        <div class="saved-filters-list" id="savedFiltersList"></div>
+      </section>
     </aside>
     <div class="catalog-content">
       <section class="catalog-results-bar" aria-live="polite">
         <div class="catalog-results-copy">
           <strong id="resultSummary">Cargando catálogo...</strong>
           <span id="resultHint">Usa la búsqueda, los selectores o los atajos para refinar el catálogo.</span>
+        </div>
+        <div class="catalog-results-actions">
+          <button id="resultsFilterToggle" class="results-filter-button" type="button" aria-expanded="false" aria-controls="filterPanel">Abrir filtros</button>
         </div>
         <div class="active-filters" id="activeFilters" hidden></div>
       </section>

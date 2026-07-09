@@ -3,13 +3,11 @@ const COLOR = { '000': 'Pendiente', '001': 'Multicolor', '002': 'Blanco', '003':
 const MATERIAL = { '000': 'Pendiente', '001': 'Resina', '002': 'Latón', '003': 'Piedra', '004': 'Cristal', '005': 'Acero inoxidable', '006': 'Metal', '007': 'Cuero', '008': 'Tela', '009': 'Material mixto', '010': 'Perla', '011': 'Acero', '012': 'Plata', '013': 'Dorado / baño oro', '999': 'Pendiente' };
 const STATUS = { disponible: 'Disponible', reservado: 'Reservado', vendido: 'Vendido', oculto: 'Oculto' };
 const DEFAULT_TABLES = { types: TYPE, materials: MATERIAL, colors: COLOR };
+const SAVED_FILTERS_KEY = 'jldv1508CatalogSavedFiltersV2';
 
 const grid = document.querySelector('#grid');
 const search = document.querySelector('#search');
 const sortOrder = document.querySelector('#sortOrder');
-const typeFilter = document.querySelector('#typeFilter');
-const materialFilter = document.querySelector('#materialFilter');
-const colorFilter = document.querySelector('#colorFilter');
 const priceMin = document.querySelector('#priceMin');
 const priceMax = document.querySelector('#priceMax');
 const priceFilterMeta = document.querySelector('#priceFilterMeta');
@@ -19,19 +17,43 @@ const visibleCount = document.querySelector('#visibleCount');
 const resultSummary = document.querySelector('#resultSummary');
 const resultHint = document.querySelector('#resultHint');
 const activeFilters = document.querySelector('#activeFilters');
-const typeShortcutChips = document.querySelector('#typeShortcutChips');
-const materialShortcutChips = document.querySelector('#materialShortcutChips');
-const colorShortcutChips = document.querySelector('#colorShortcutChips');
+const typeFilterChips = document.querySelector('#typeFilterChips');
+const materialFilterChips = document.querySelector('#materialFilterChips');
+const colorFilterChips = document.querySelector('#colorFilterChips');
+const typeGroupMeta = document.querySelector('#typeGroupMeta');
+const materialGroupMeta = document.querySelector('#materialGroupMeta');
+const colorGroupMeta = document.querySelector('#colorGroupMeta');
+const filterStateSummary = document.querySelector('#filterStateSummary');
+const savedFiltersList = document.querySelector('#savedFiltersList');
+const saveCurrentFilters = document.querySelector('#saveCurrentFilters');
+const filterToggle = document.querySelector('#filterToggle');
+const resultsFilterToggle = document.querySelector('#resultsFilterToggle');
+const filterClose = document.querySelector('#filterClose');
+const filterPanel = document.querySelector('#filterPanel');
+const filterPanelBackdrop = document.querySelector('#filterPanelBackdrop');
 const catalogUrl = document.body.dataset.catalogUrl || 'catalogo-unificado.json?v=20260708-cleanup';
 const publicStorageKey = document.body.dataset.publicStorageKey || '';
 const emptyTitle = document.body.dataset.emptyTitle || 'Catálogo en blanco';
 const emptyText = document.body.dataset.emptyText || 'Estamos preparando una nueva selección de piezas.';
+
+const filterSelections = {
+  type: new Set(),
+  material: new Set(),
+  color: new Set(),
+};
+
+const FILTER_GROUPS = {
+  type: { container: typeFilterChips, meta: typeGroupMeta, param: 'tipo', allLabel: 'Todas' },
+  material: { container: materialFilterChips, meta: materialGroupMeta, param: 'material', allLabel: 'Todos' },
+  color: { container: colorFilterChips, meta: colorGroupMeta, param: 'color', allLabel: 'Todos' },
+};
+
 let catalog = [];
 let baseCatalog = [];
 let activeTables = DEFAULT_TABLES;
-let syncingFilters = false;
 let currentRows = [];
 let originalIndexById = new Map();
+let savedFilterPresets = [];
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch]));
@@ -39,10 +61,6 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
-}
-
-function labelFor(table, key, fallback) {
-  return fallback || table[key] || key || 'Pendiente';
 }
 
 function mergeTables(source) {
@@ -69,6 +87,29 @@ function queryTokens() {
   return normalizeText(search?.value || '')
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function serializeSelection(set) {
+  return [...set].sort().join(',');
+}
+
+function parseSelection(value) {
+  return new Set(String(value || '').split(',').map(cleanName).filter(Boolean));
+}
+
+function activeSelection(group) {
+  return filterSelections[group] || new Set();
+}
+
+function selectionCount(group) {
+  return activeSelection(group).size;
+}
+
+function groupLabel(group, key) {
+  if (group === 'type') return activeTables.types[key] || key || 'Tipo';
+  if (group === 'material') return activeTables.materials[key] || key || 'Material';
+  if (group === 'color') return activeTables.colors[key] || key || 'Color';
+  return key;
 }
 
 function typeName(item) {
@@ -101,10 +142,6 @@ function itemPrice(item) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function itemIdf(item) {
-  return cleanName(item.idf || item.id || item.codigo || '');
-}
-
 function searchText(item) {
   return normalizeText([
     item.codigo,
@@ -114,11 +151,13 @@ function searchText(item) {
     item.productName,
     item.type,
     item.tipo,
-    activeTables.types[itemType(item)],
+    typeName(item),
     item.material,
     item.material_nombre,
+    materialName(item),
     item.color,
     item.color_nombre,
+    colorName(item),
     item.estado,
     STATUS[item.estado],
     item.medidas,
@@ -156,21 +195,27 @@ function matchesPrice(item) {
   return true;
 }
 
-function rowsForOptions(ignore) {
+function matchesGroup(group, value, ignoreGroup) {
+  if (group === ignoreGroup) return true;
+  const selected = activeSelection(group);
+  return !selected.size || selected.has(value);
+}
+
+function rowsForOptions(ignoreGroup) {
   return baseRows().filter(item =>
     matchesPrice(item) &&
-    (ignore === 'type' || !typeFilter?.value || itemType(item) === typeFilter.value) &&
-    (ignore === 'material' || !materialFilter?.value || itemMaterial(item) === materialFilter.value) &&
-    (ignore === 'color' || !colorFilter?.value || itemColor(item) === colorFilter.value)
+    matchesGroup('type', itemType(item), ignoreGroup) &&
+    matchesGroup('material', itemMaterial(item), ignoreGroup) &&
+    matchesGroup('color', itemColor(item), ignoreGroup)
   );
 }
 
 function selectedRows() {
   return baseRows().filter(item =>
     matchesPrice(item) &&
-    (!typeFilter?.value || itemType(item) === typeFilter.value) &&
-    (!materialFilter?.value || itemMaterial(item) === materialFilter.value) &&
-    (!colorFilter?.value || itemColor(item) === colorFilter.value)
+    matchesGroup('type', itemType(item)) &&
+    matchesGroup('material', itemMaterial(item)) &&
+    matchesGroup('color', itemColor(item))
   );
 }
 
@@ -196,64 +241,39 @@ function optionRows(rows, keyFn, labelFn) {
   return [...options.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label, 'es'));
 }
 
-function fillSelect(select, placeholder, options) {
-  if (!select) return;
-  const previous = select.value;
-  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
-  options.forEach(([key, option]) => {
-    select.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(key)}">${escapeHtml(option.label)} (${option.count})</option>`);
+function mergeSelectedOptions(group, options) {
+  const merged = new Map(options);
+  activeSelection(group).forEach(key => {
+    if (!merged.has(key)) merged.set(key, { label: groupLabel(group, key), count: 0 });
   });
-  select.value = options.some(([key]) => key === previous) ? previous : '';
+  return [...merged.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label, 'es'));
 }
 
-function topOptions(options, limit = 8) {
-  return [...options]
-    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label, 'es'))
-    .slice(0, limit);
-}
-
-function renderShortcutChips(container, filterName, options, activeValue) {
-  if (!container) return;
-  const top = topOptions(options);
-  if (!top.length) {
-    container.innerHTML = '<span class="filter-chip-empty">Sin opciones</span>';
-    return;
+function renderFilterGroup(group, options) {
+  const config = FILTER_GROUPS[group];
+  if (!config?.container) return;
+  const selected = activeSelection(group);
+  const merged = mergeSelectedOptions(group, options);
+  config.container.innerHTML = merged.length
+    ? merged.map(([key, option]) => `<button type="button" class="filter-chip filter-chip--toggle${selected.has(key) ? ' is-active' : ''}" data-toggle-filter="${escapeAttr(group)}" data-filter-value="${escapeAttr(key)}">${escapeHtml(option.label)}<span>${option.count}</span></button>`).join('')
+    : '<span class="filter-chip-empty">Sin opciones</span>';
+  if (config.meta) {
+    config.meta.textContent = selected.size ? `${selected.size} seleccionados` : config.allLabel;
   }
-  container.innerHTML = top.map(([key, option]) => `<button type="button" class="filter-chip${key === activeValue ? ' is-active' : ''}" data-filter-target="${escapeAttr(filterName)}" data-filter-value="${escapeAttr(key)}">${escapeHtml(option.label)}<span>${option.count}</span></button>`).join('');
 }
 
-function syncSmartFilters() {
-  syncingFilters = true;
-  const typeOptions = optionRows(rowsForOptions('type'), itemType, typeName);
-  const materialOptions = optionRows(rowsForOptions('material'), itemMaterial, materialName);
-  const colorOptions = optionRows(rowsForOptions('color'), itemColor, colorName);
-  fillSelect(
-    typeFilter,
-    'Todos los tipos',
-    typeOptions
-  );
-  fillSelect(
-    materialFilter,
-    'Todos los materiales',
-    materialOptions
-  );
-  fillSelect(
-    colorFilter,
-    'Todos los colores',
-    colorOptions
-  );
-  renderShortcutChips(typeShortcutChips, 'type', typeOptions, typeFilter?.value || '');
-  renderShortcutChips(materialShortcutChips, 'material', materialOptions, materialFilter?.value || '');
-  renderShortcutChips(colorShortcutChips, 'color', colorOptions, colorFilter?.value || '');
-  syncingFilters = false;
+function syncFilterGroups() {
+  renderFilterGroup('type', optionRows(rowsForOptions('type'), itemType, typeName));
+  renderFilterGroup('material', optionRows(rowsForOptions('material'), itemMaterial, materialName));
+  renderFilterGroup('color', optionRows(rowsForOptions('color'), itemColor, colorName));
 }
 
 function syncUrl() {
   const params = new URLSearchParams();
   if (search.value.trim()) params.set('q', search.value.trim());
-  if (typeFilter?.value) params.set('tipo', typeFilter.value);
-  if (materialFilter?.value) params.set('material', materialFilter.value);
-  if (colorFilter?.value) params.set('color', colorFilter.value);
+  if (serializeSelection(activeSelection('type'))) params.set('tipo', serializeSelection(activeSelection('type')));
+  if (serializeSelection(activeSelection('material'))) params.set('material', serializeSelection(activeSelection('material')));
+  if (serializeSelection(activeSelection('color'))) params.set('color', serializeSelection(activeSelection('color')));
   if (priceMin?.value.trim()) params.set('precioMin', priceMin.value.trim());
   if (priceMax?.value.trim()) params.set('precioMax', priceMax.value.trim());
   if (sortOrder?.value && sortOrder.value !== 'original') params.set('sort', sortOrder.value);
@@ -263,9 +283,9 @@ function syncUrl() {
 function restoreUrlFilters() {
   const params = new URLSearchParams(location.search);
   search.value = params.get('q') || '';
-  if (typeFilter) typeFilter.value = params.get('tipo') || '';
-  if (materialFilter) materialFilter.value = params.get('material') || '';
-  if (colorFilter) colorFilter.value = params.get('color') || '';
+  filterSelections.type = parseSelection(params.get('tipo'));
+  filterSelections.material = parseSelection(params.get('material'));
+  filterSelections.color = parseSelection(params.get('color'));
   if (priceMin) priceMin.value = params.get('precioMin') || '';
   if (priceMax) priceMax.value = params.get('precioMax') || '';
   if (sortOrder) sortOrder.value = params.get('sort') || 'original';
@@ -306,7 +326,7 @@ function itemDetails(item) {
     ['Tipo', typeName(item)],
     ['Material', materialName(item)],
     ['Color', colorName(item)],
-    ['Precio', priceText(item.precio_eur) || 'Precio pendiente'],
+    ['Precio', priceText(item.precio_eur ?? item.price) || 'Precio pendiente'],
     ['Estado', `${STATUS[item.estado] || item.estado || 'Disponible'}${item.stock ? ` · Stock ${item.stock}` : ''}`],
     ['Medidas', item.medidas || ''],
     ['Descripción', item.descripcion || ''],
@@ -315,11 +335,6 @@ function itemDetails(item) {
 
 function detailsHtml(item) {
   return `<dl>${itemDetails(item).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`;
-}
-
-function selectedOptionLabel(select, fallback = '') {
-  const option = [...(select?.options || [])].find(current => current.value === select.value);
-  return option ? option.textContent.replace(/\s+\(\d+\)\s*$/, '') : fallback;
 }
 
 function availablePrices() {
@@ -340,12 +355,17 @@ function updatePriceFilterMeta() {
   priceFilterNote.textContent = `${prices.length.toLocaleString('es-ES')} piezas tienen precio disponible para filtrar.`;
 }
 
+function selectedOptionLabel(select, fallback = '') {
+  const option = [...(select?.options || [])].find(current => current.value === select.value);
+  return option ? option.textContent : fallback;
+}
+
 function activeFilterEntries() {
   const entries = [];
   if (search?.value.trim()) entries.push({ key: 'search', label: `Busqueda: ${search.value.trim()}` });
-  if (typeFilter?.value) entries.push({ key: 'type', label: `Tipo: ${selectedOptionLabel(typeFilter, activeTables.types[typeFilter.value] || typeFilter.value)}` });
-  if (materialFilter?.value) entries.push({ key: 'material', label: `Material: ${selectedOptionLabel(materialFilter, activeTables.materials[materialFilter.value] || materialFilter.value)}` });
-  if (colorFilter?.value) entries.push({ key: 'color', label: `Color: ${selectedOptionLabel(colorFilter, activeTables.colors[colorFilter.value] || colorFilter.value)}` });
+  activeSelection('type').forEach(key => entries.push({ key: `type:${key}`, label: `Tipo: ${groupLabel('type', key)}` }));
+  activeSelection('material').forEach(key => entries.push({ key: `material:${key}`, label: `Material: ${groupLabel('material', key)}` }));
+  activeSelection('color').forEach(key => entries.push({ key: `color:${key}`, label: `Color: ${groupLabel('color', key)}` }));
   const { min, max } = priceFilters();
   if (min != null) entries.push({ key: 'priceMin', label: `Desde: ${min.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
   if (max != null) entries.push({ key: 'priceMax', label: `Hasta: ${max.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
@@ -353,8 +373,12 @@ function activeFilterEntries() {
   return entries;
 }
 
+function activeFilterCount() {
+  return activeFilterEntries().length;
+}
+
 function hasActiveFilters() {
-  return activeFilterEntries().length > 0;
+  return activeFilterCount() > 0;
 }
 
 function renderActiveFilters() {
@@ -362,6 +386,22 @@ function renderActiveFilters() {
   const entries = activeFilterEntries();
   activeFilters.hidden = !entries.length;
   activeFilters.innerHTML = entries.map(entry => `<button type="button" class="active-filter-chip" data-remove-filter="${escapeAttr(entry.key)}">${escapeHtml(entry.label)}<span aria-hidden="true">×</span></button>`).join('');
+}
+
+function syncFilterSummary() {
+  if (filterStateSummary) {
+    filterStateSummary.textContent = hasActiveFilters() ? `${activeFilterCount()} activos` : 'Sin filtros';
+  }
+  const count = activeFilterCount();
+  const label = count ? `Filtros (${count})` : 'Filtros';
+  if (filterToggle) {
+    filterToggle.textContent = label;
+    filterToggle.setAttribute('aria-expanded', String(document.body.classList.contains('filters-open')));
+  }
+  if (resultsFilterToggle) {
+    resultsFilterToggle.textContent = count ? `Abrir filtros (${count})` : 'Abrir filtros';
+    resultsFilterToggle.setAttribute('aria-expanded', String(document.body.classList.contains('filters-open')));
+  }
 }
 
 function renderResultSummary(totalRows, visibleRows) {
@@ -378,43 +418,50 @@ function renderResultSummary(totalRows, visibleRows) {
   if (resultHint) {
     const tokens = queryTokens();
     if (!hasActiveFilters()) {
-      resultHint.textContent = 'Usa la búsqueda, los selectores o los atajos para refinar el catálogo.';
+      resultHint.textContent = 'Usa la búsqueda, la multiselección y el panel lateral para refinar el catálogo.';
     } else if ((priceFilters().min != null || priceFilters().max != null) && !availablePrices().length) {
       resultHint.textContent = 'Ahora mismo el catálogo base no tiene precios cargados, así que ese filtro no devolverá piezas hasta que haya importes.';
     } else if (!visibleRows.length) {
-      resultHint.textContent = 'No hay coincidencias con los filtros actuales. Puedes quitar alguno o limpiar todo.';
+      resultHint.textContent = 'No hay coincidencias con los filtros actuales. Puedes quitar alguno, abrir un favorito o limpiar todo.';
     } else if (tokens.length > 1) {
       resultHint.textContent = `La búsqueda está cruzando ${tokens.length} términos a la vez.`;
+    } else if (savedFilterPresets.length) {
+      resultHint.textContent = 'Puedes reutilizar una combinación guardada desde la zona de favoritos.';
     } else {
-      resultHint.textContent = 'Puedes quitar filtros desde las etiquetas activas o probar los atajos laterales.';
+      resultHint.textContent = 'Puedes combinar varios tipos, materiales y colores a la vez desde el panel.';
     }
   }
+}
+
+function clearAllSelections() {
+  filterSelections.type.clear();
+  filterSelections.material.clear();
+  filterSelections.color.clear();
 }
 
 function clearAllFilters() {
   if (search) search.value = '';
   if (sortOrder) sortOrder.value = 'original';
-  if (typeFilter) typeFilter.value = '';
-  if (materialFilter) materialFilter.value = '';
-  if (colorFilter) colorFilter.value = '';
   if (priceMin) priceMin.value = '';
   if (priceMax) priceMax.value = '';
+  clearAllSelections();
 }
 
 function removeFilter(key) {
   if (key === 'search' && search) search.value = '';
   if (key === 'sort' && sortOrder) sortOrder.value = 'original';
-  if (key === 'type' && typeFilter) typeFilter.value = '';
-  if (key === 'material' && materialFilter) materialFilter.value = '';
-  if (key === 'color' && colorFilter) colorFilter.value = '';
   if (key === 'priceMin' && priceMin) priceMin.value = '';
   if (key === 'priceMax' && priceMax) priceMax.value = '';
+  if (key.includes(':')) {
+    const [group, value] = key.split(':');
+    activeSelection(group)?.delete(value);
+  }
 }
 
 function emptyStateHtml() {
   const title = hasActiveFilters() ? 'Sin resultados' : emptyTitle;
   const text = hasActiveFilters()
-    ? 'No hay piezas que coincidan con la combinación actual de búsqueda y filtros.'
+    ? 'No hay piezas que coincidan con la combinacion actual de busqueda y filtros.'
     : emptyText;
   const action = hasActiveFilters()
     ? '<button class="empty-state-action" type="button" data-clear-all-filters>Limpiar filtros</button>'
@@ -422,13 +469,124 @@ function emptyStateHtml() {
   return `<section class="empty-state"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(text)}</span>${action}</section>`;
 }
 
+function getPresetPayload() {
+  return {
+    q: search?.value.trim() || '',
+    sort: sortOrder?.value || 'original',
+    priceMin: priceMin?.value.trim() || '',
+    priceMax: priceMax?.value.trim() || '',
+    type: [...activeSelection('type')],
+    material: [...activeSelection('material')],
+    color: [...activeSelection('color')],
+  };
+}
+
+function applyPreset(preset) {
+  const payload = preset?.filters || {};
+  if (search) search.value = payload.q || '';
+  if (sortOrder) sortOrder.value = payload.sort || 'original';
+  if (priceMin) priceMin.value = payload.priceMin || '';
+  if (priceMax) priceMax.value = payload.priceMax || '';
+  filterSelections.type = new Set(payload.type || []);
+  filterSelections.material = new Set(payload.material || []);
+  filterSelections.color = new Set(payload.color || []);
+  render();
+  closeFilters();
+}
+
+function loadSavedFilters() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVED_FILTERS_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedFilters() {
+  try {
+    localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(savedFilterPresets));
+  } catch {}
+}
+
+function saveCurrentPreset() {
+  if (!hasActiveFilters()) {
+    window.alert('Primero aplica algun filtro o una busqueda para poder guardarlo.');
+    return;
+  }
+  const defaultName = `Filtro ${savedFilterPresets.length + 1}`;
+  const name = cleanName(window.prompt('Nombre para este favorito', defaultName));
+  if (!name) return;
+  const preset = {
+    id: `${Date.now()}`,
+    name,
+    filters: getPresetPayload(),
+  };
+  savedFilterPresets = [preset, ...savedFilterPresets].slice(0, 12);
+  persistSavedFilters();
+  renderSavedFilters();
+}
+
+function deleteSavedPreset(id) {
+  savedFilterPresets = savedFilterPresets.filter(preset => preset.id !== id);
+  persistSavedFilters();
+  renderSavedFilters();
+}
+
+function presetSummary(preset) {
+  const filters = preset.filters || {};
+  const parts = [];
+  if (filters.q) parts.push(`Busqueda: ${filters.q}`);
+  if (filters.type?.length) parts.push(`${filters.type.length} tipos`);
+  if (filters.material?.length) parts.push(`${filters.material.length} materiales`);
+  if (filters.color?.length) parts.push(`${filters.color.length} colores`);
+  if (filters.priceMin || filters.priceMax) parts.push('Precio');
+  if (filters.sort && filters.sort !== 'original') parts.push(`Orden ${filters.sort}`);
+  return parts.join(' · ') || 'Sin detalle';
+}
+
+function renderSavedFilters() {
+  if (!savedFiltersList) return;
+  if (!savedFilterPresets.length) {
+    savedFiltersList.innerHTML = '<span class="filter-chip-empty">Todavia no hay favoritos guardados.</span>';
+    return;
+  }
+  savedFiltersList.innerHTML = savedFilterPresets.map(preset => `<article class="saved-filter-card">
+    <button type="button" class="saved-filter-apply" data-apply-preset="${escapeAttr(preset.id)}">
+      <strong>${escapeHtml(preset.name)}</strong>
+      <span>${escapeHtml(presetSummary(preset))}</span>
+    </button>
+    <button type="button" class="saved-filter-delete" data-delete-preset="${escapeAttr(preset.id)}" aria-label="Eliminar ${escapeAttr(preset.name)}">×</button>
+  </article>`).join('');
+}
+
+function openFilters() {
+  document.body.classList.add('filters-open');
+  filterPanelBackdrop?.removeAttribute('hidden');
+  syncFilterSummary();
+}
+
+function closeFilters() {
+  document.body.classList.remove('filters-open');
+  filterPanelBackdrop?.setAttribute('hidden', '');
+  syncFilterSummary();
+}
+
+function toggleFilterValue(group, value) {
+  const selected = activeSelection(group);
+  if (selected.has(value)) selected.delete(value);
+  else selected.add(value);
+}
+
 function render() {
-  syncSmartFilters();
+  syncFilterGroups();
   updatePriceFilterMeta();
+  renderSavedFilters();
   const rows = sortRows(selectedRows());
   currentRows = rows;
   renderResultSummary(catalog.length, rows);
   renderActiveFilters();
+  syncFilterSummary();
   syncUrl();
   grid.innerHTML = rows.length ? rows.map((item, index) => `<article class="card type-${escapeHtml(itemType(item))}">
     <button class="image image-button" type="button" data-card-index="${index}" aria-label="Ampliar ${escapeHtml(cardTitle(item))}">
@@ -517,16 +675,6 @@ function localPublicData() {
   }
 }
 
-function refreshPublicCatalog() {
-  const localData = localPublicData();
-  if (localData?.tables) activeTables = mergeTables(localData.tables);
-  catalog = mergeCatalogRows(baseCatalog, localData?.items);
-  originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
-  syncSmartFilters();
-  restoreUrlFilters();
-  render();
-}
-
 function rowKey(item) {
   return item.codigo || item.archivo || item.referencia_csv || `${item.tipo || ''}-${item.material || ''}-${item.color || ''}-${item.nombre_comercial || ''}`;
 }
@@ -537,9 +685,8 @@ function mergeCatalogRows(baseRows, extraRows) {
   const indexByKey = new Map(rows.map((item, index) => [rowKey(item), index]));
   extras.forEach(item => {
     const key = rowKey(item);
-    if (indexByKey.has(key)) {
-      rows[indexByKey.get(key)] = item;
-    } else {
+    if (indexByKey.has(key)) rows[indexByKey.get(key)] = item;
+    else {
       indexByKey.set(key, rows.length);
       rows.push(item);
     }
@@ -547,28 +694,32 @@ function mergeCatalogRows(baseRows, extraRows) {
   return rows;
 }
 
-function renderFromEvent() {
-  if (!syncingFilters) render();
+function refreshPublicCatalog() {
+  const localData = localPublicData();
+  if (localData?.tables) activeTables = mergeTables(localData.tables);
+  catalog = mergeCatalogRows(baseCatalog, localData?.items);
+  originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
+  render();
 }
 
-search.addEventListener('input', render);
+search?.addEventListener('input', render);
 sortOrder?.addEventListener('input', render);
-typeFilter?.addEventListener('input', renderFromEvent);
-materialFilter?.addEventListener('input', renderFromEvent);
-colorFilter?.addEventListener('input', renderFromEvent);
 priceMin?.addEventListener('input', render);
 priceMax?.addEventListener('input', render);
 clearFilters?.addEventListener('click', () => {
   clearAllFilters();
   render();
 });
+saveCurrentFilters?.addEventListener('click', saveCurrentPreset);
+filterToggle?.addEventListener('click', openFilters);
+resultsFilterToggle?.addEventListener('click', openFilters);
+filterClose?.addEventListener('click', closeFilters);
+filterPanelBackdrop?.addEventListener('click', closeFilters);
+
 document.addEventListener('click', event => {
-  const shortcut = event.target.closest('[data-filter-target]');
-  if (shortcut) {
-    const { filterTarget, filterValue } = shortcut.dataset;
-    if (filterTarget === 'type' && typeFilter) typeFilter.value = filterValue || '';
-    if (filterTarget === 'material' && materialFilter) materialFilter.value = filterValue || '';
-    if (filterTarget === 'color' && colorFilter) colorFilter.value = filterValue || '';
+  const toggle = event.target.closest('[data-toggle-filter]');
+  if (toggle) {
+    toggleFilterValue(toggle.dataset.toggleFilter || '', toggle.dataset.filterValue || '');
     render();
     return;
   }
@@ -578,11 +729,24 @@ document.addEventListener('click', event => {
     render();
     return;
   }
-  if (event.target.closest('[data-clear-all-filters]')) {
+  const clearAll = event.target.closest('[data-clear-all-filters]');
+  if (clearAll) {
     clearAllFilters();
     render();
+    return;
+  }
+  const applyPresetButton = event.target.closest('[data-apply-preset]');
+  if (applyPresetButton) {
+    const preset = savedFilterPresets.find(item => item.id === applyPresetButton.dataset.applyPreset);
+    if (preset) applyPreset(preset);
+    return;
+  }
+  const deletePresetButton = event.target.closest('[data-delete-preset]');
+  if (deletePresetButton) {
+    deleteSavedPreset(deletePresetButton.dataset.deletePreset || '');
   }
 });
+
 ensureReturnToEditButton();
 grid?.addEventListener('click', event => {
   const card = event.target.closest('[data-card-index]');
@@ -591,21 +755,34 @@ grid?.addEventListener('click', event => {
   if (item) openViewer(item);
 });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeViewer();
+  if (event.key === 'Escape') {
+    closeViewer();
+    closeFilters();
+  }
+});
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 900) closeFilters();
 });
 
-fetch(catalogUrl).then(response => response.json()).then(data => {
-  baseCatalog = Array.isArray(data) ? [...data] : [];
-  const localData = localPublicData();
-  if (localData?.tables) activeTables = mergeTables(localData.tables);
-  catalog = mergeCatalogRows(baseCatalog, localData?.items);
-  originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
-  syncSmartFilters();
-  restoreUrlFilters();
-  render();
-});
+savedFilterPresets = loadSavedFilters();
+
+fetch(catalogUrl)
+  .then(response => response.json())
+  .then(data => {
+    baseCatalog = Array.isArray(data) ? [...data] : [];
+    restoreUrlFilters();
+    const localData = localPublicData();
+    if (localData?.tables) activeTables = mergeTables(localData.tables);
+    catalog = mergeCatalogRows(baseCatalog, localData?.items);
+    originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
+    render();
+  });
 
 window.addEventListener('storage', event => {
+  if (event.key === SAVED_FILTERS_KEY) {
+    savedFilterPresets = loadSavedFilters();
+    renderSavedFilters();
+  }
   if (!publicStorageKey || event.key !== publicStorageKey) return;
   refreshPublicCatalog();
 });
