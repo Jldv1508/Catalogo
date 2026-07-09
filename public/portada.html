@@ -24,9 +24,20 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 18px;
+      gap: 28px;
       padding: 20px 16px;
       text-align: center;
+    }
+    .cover-header,
+    .cover-footer {
+      display: grid;
+      justify-items: center;
+    }
+    .cover-header {
+      margin-bottom: 8px;
+    }
+    .cover-footer {
+      margin-top: 12px;
     }
     .cover-brand {
       margin: 0;
@@ -71,11 +82,15 @@
 </head>
 <body>
   <main class="cover-stage">
-    <a class="cover-brand" href="/" aria-label="jldv1508">jldv1508</a>
+    <div class="cover-header">
+      <a class="cover-brand" href="/" aria-label="jldv1508">jldv1508</a>
+    </div>
     <img class="cover-logo" src="/logo-portada.svg" alt="Logo jldv1508">
-    <div class="cover-actions" aria-label="Acciones de portada">
-      <a href="/catalogo">Empezar</a>
-      <a href="/edicion" aria-label="Abrir edicion">...</a>
+    <div class="cover-footer">
+      <div class="cover-actions" aria-label="Acciones de portada">
+        <a href="/catalogo">Empezar</a>
+        <a href="/edicion" aria-label="Abrir edicion">...</a>
+      </div>
     </div>
   </main>
 </body>
