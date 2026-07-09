@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edición · jldv1508</title>
+  <script>
+    (() => {
+      const key = 'jldv1508EditUnlocked';
+      try {
+        sessionStorage.setItem(key, '1');
+        document.documentElement.classList.add('access-unlocked');
+      } catch {}
+    })();
+  </script>
+  <style>
+    html.access-unlocked .edit-topbar,
+    html.access-unlocked .edit-main,
+    html.access-unlocked [data-edit-form] {
+      display: none !important;
+    }
+  </style>
+  <link rel="stylesheet" href="/styles.css?v=20260708-cleanup">
+</head>
+<body class="edit-shell" data-catalog-title="Edición del catálogo" data-catalog-url="/api/catalogo-publico" data-public-storage-key="jldv1508PublicCatalogConchasV1">
+  <header class="edit-topbar">
+    <a class="home-logo" href="/">jldv1508</a>
+    <div class="brand-actions">
+      <a class="edit-pill" href="/catalogo">Ver público</a>
+      <span class="edit-pill">Bisutería y conchas juntos</span>
+    </div>
+  </header>
+  <main class="edit-main">
+    <section class="edit-panel edit-panel--hero">
+      <p class="blog-kicker">Cabecera de edición</p>
+      <h1>Admin del catálogo único.</h1>
+      <p>Desde aquí editas la misma lista que se ve en la página pública. Bisutería y conchas viven en un solo archivo para no duplicar trabajos.</p>
+      <div class="edit-actions">
+        <button class="catalog-edit" type="button">Abrir editor</button>
+        <a href="/catalogo">Empezar</a>
+        <a href="/">Portada</a>
+      </div>
+    </section>
+    <section class="edit-panel">
+      <p class="blog-kicker">Archivo activo</p>
+      <h1>catalogo-unificado.json</h1>
+      <p>La edición se guarda en el navegador y actualiza la vista pública sin separar bisutería y conchas.</p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const key = 'jldv1508EditUnlocked';
+      const unlockEditor = () => {
+        try {
+          if (localStorage.getItem(key) === '1') sessionStorage.setItem(key, '1');
+          if (sessionStorage.getItem(key) !== '1') return;
+        } catch {
+          return;
+        }
+
+        document.querySelector('[data-edit-form]')?.setAttribute('hidden', '');
+        document.querySelectorAll('[data-edit-toolbar], [data-edit-note], [data-edit-workspace]').forEach(el => {
+          el.hidden = false;
+        });
+        const state = document.querySelector('[data-edit-state]');
+        if (state) state.textContent = 'Activa';
+      };
+
+      unlockEditor();
+      window.addEventListener('DOMContentLoaded', unlockEditor);
+      window.addEventListener('load', unlockEditor);
+    })();
+  </script>
+  <script src="/edit-access.js?v=20260708-cleanup" defer></script>
+</body>
+</html>

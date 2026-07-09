@@ -3,21 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>jldv1508</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Catálogo · jldv1508</title>
+  <link rel="stylesheet" href="/styles.css?v=20260708-cleanup">
 </head>
-<body>
+<body data-catalog-title="Catálogo unificado" data-catalog-url="/api/catalogo-publico" data-public-storage-key="jldv1508PublicCatalogConchasV1" data-empty-title="Catálogo en preparación" data-empty-text="Todavía no hay piezas visibles en este catálogo.">
   <header>
-    <p>jldv1508.com</p>
-    <h1>Catálogo de bisutería</h1>
+    <div class="brand-row">
+      <a class="home-logo" href="/">jldv1508</a>
+      <div class="brand-actions">
+        <span class="visible-count" id="visibleCount">Cargando...</span>
+        <a class="catalog-edit" href="/edicion">Editar</a>
+      </div>
+    </div>
+    <h1>Catálogo</h1>
     <div class="controls">
-      <input id="search" placeholder="Buscar código, color, material...">
-      <select id="type"><option value="">Todos los tipos</option></select>
-      <select id="material"><option value="">Todos los materiales</option></select>
-      <select id="color"><option value="">Todos los colores</option></select>
+      <input id="search" type="search" placeholder="Buscar por código, tipo, material o color" autocomplete="off">
+      <select id="sortOrder" aria-label="Ordenar catálogo">
+        <option value="original">Orden original</option>
+        <option value="name">Nombre</option>
+        <option value="type">Tipo</option>
+        <option value="material">Material</option>
+        <option value="color">Color</option>
+      </select>
+      <button id="clearFilters" type="button">Limpiar</button>
     </div>
   </header>
-  <main id="grid"></main>
-  <script src="app.js"></script>
+  <section class="catalog-shell">
+    <aside class="filter-panel" aria-label="Filtros del catálogo">
+      <div class="filter-panel-head">
+        <strong>Filtros</strong>
+        <span>Un solo catálogo</span>
+      </div>
+      <div class="smart-filters">
+        <label><span>Tipo</span><select id="typeFilter"><option value="">Todos los tipos</option></select></label>
+        <label><span>Material</span><select id="materialFilter"><option value="">Todos los materiales</option></select></label>
+        <label><span>Color</span><select id="colorFilter"><option value="">Todos los colores</option></select></label>
+      </div>
+    </aside>
+    <main id="grid" aria-live="polite"></main>
+  </section>
+  <script src="/app.js?v=20260708-cleanup" defer></script>
 </body>
 </html>
