@@ -32,15 +32,64 @@
     <aside class="filter-panel" aria-label="Filtros del catálogo">
       <div class="filter-panel-head">
         <strong>Filtros</strong>
-        <span>Un solo catálogo</span>
+        <span>Catálogo público</span>
       </div>
       <div class="smart-filters">
         <label><span>Tipo</span><select id="typeFilter"><option value="">Todos los tipos</option></select></label>
         <label><span>Material</span><select id="materialFilter"><option value="">Todos los materiales</option></select></label>
         <label><span>Color</span><select id="colorFilter"><option value="">Todos los colores</option></select></label>
       </div>
+      <section class="price-filter-box" aria-labelledby="priceFilterTitle">
+        <div class="filter-chip-group-head">
+          <strong id="priceFilterTitle">Precio</strong>
+          <span id="priceFilterMeta">Sin precios</span>
+        </div>
+        <div class="price-filter-grid">
+          <label>
+            <span>Desde</span>
+            <input id="priceMin" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input id="priceMax" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+          </label>
+        </div>
+        <p class="price-filter-note" id="priceFilterNote">El filtro se activa cuando las piezas tengan precio cargado.</p>
+      </section>
+      <div class="filter-shortcuts">
+        <section class="filter-chip-group" aria-labelledby="typeShortcutTitle">
+          <div class="filter-chip-group-head">
+            <strong id="typeShortcutTitle">Tipos frecuentes</strong>
+            <span>Acceso rápido</span>
+          </div>
+          <div class="filter-chips" id="typeShortcutChips"></div>
+        </section>
+        <section class="filter-chip-group" aria-labelledby="materialShortcutTitle">
+          <div class="filter-chip-group-head">
+            <strong id="materialShortcutTitle">Materiales frecuentes</strong>
+            <span>Acceso rápido</span>
+          </div>
+          <div class="filter-chips" id="materialShortcutChips"></div>
+        </section>
+        <section class="filter-chip-group" aria-labelledby="colorShortcutTitle">
+          <div class="filter-chip-group-head">
+            <strong id="colorShortcutTitle">Colores frecuentes</strong>
+            <span>Acceso rápido</span>
+          </div>
+          <div class="filter-chips" id="colorShortcutChips"></div>
+        </section>
+      </div>
     </aside>
-    <main id="grid" aria-live="polite"></main>
+    <div class="catalog-content">
+      <section class="catalog-results-bar" aria-live="polite">
+        <div class="catalog-results-copy">
+          <strong id="resultSummary">Cargando catálogo...</strong>
+          <span id="resultHint">Usa la búsqueda, los selectores o los atajos para refinar el catálogo.</span>
+        </div>
+        <div class="active-filters" id="activeFilters" hidden></div>
+      </section>
+      <main id="grid" aria-live="polite"></main>
+    </div>
   </section>
   <script src="/app.js?v=20260708-cleanup" defer></script>
 </body>

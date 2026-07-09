@@ -10,8 +10,18 @@ const sortOrder = document.querySelector('#sortOrder');
 const typeFilter = document.querySelector('#typeFilter');
 const materialFilter = document.querySelector('#materialFilter');
 const colorFilter = document.querySelector('#colorFilter');
+const priceMin = document.querySelector('#priceMin');
+const priceMax = document.querySelector('#priceMax');
+const priceFilterMeta = document.querySelector('#priceFilterMeta');
+const priceFilterNote = document.querySelector('#priceFilterNote');
 const clearFilters = document.querySelector('#clearFilters');
 const visibleCount = document.querySelector('#visibleCount');
+const resultSummary = document.querySelector('#resultSummary');
+const resultHint = document.querySelector('#resultHint');
+const activeFilters = document.querySelector('#activeFilters');
+const typeShortcutChips = document.querySelector('#typeShortcutChips');
+const materialShortcutChips = document.querySelector('#materialShortcutChips');
+const colorShortcutChips = document.querySelector('#colorShortcutChips');
 const catalogUrl = document.body.dataset.catalogUrl || 'catalogo-unificado.json?v=20260708-cleanup';
 const publicStorageKey = document.body.dataset.publicStorageKey || '';
 const emptyTitle = document.body.dataset.emptyTitle || 'Catálogo en blanco';
@@ -48,6 +58,19 @@ function cleanName(value) {
   return String(value || '').trim();
 }
 
+function normalizeText(value) {
+  return cleanName(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function queryTokens() {
+  return normalizeText(search?.value || '')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
 function typeName(item) {
   return activeTables.types[itemType(item)] || cleanName(item.tipo_nombre) || 'Tipo pendiente';
 }
@@ -72,12 +95,18 @@ function itemColor(item) {
   return item.color || '000';
 }
 
+function itemPrice(item) {
+  const raw = item.precio_eur ?? item.price ?? '';
+  const value = Number(String(raw).replace(',', '.'));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function itemIdf(item) {
   return cleanName(item.idf || item.id || item.codigo || '');
 }
 
 function searchText(item) {
-  return [
+  return normalizeText([
     item.codigo,
     item.referencia_csv,
     item.idf,
@@ -94,18 +123,42 @@ function searchText(item) {
     STATUS[item.estado],
     item.medidas,
     item.descripcion,
-  ].join(' ').toLowerCase();
+  ].join(' '));
+}
+
+function matchesQuery(item) {
+  const tokens = queryTokens();
+  if (!tokens.length) return true;
+  const haystack = searchText(item);
+  return tokens.every(token => haystack.includes(token));
 }
 
 function baseRows() {
-  const query = search.value.trim().toLowerCase();
-  return catalog.filter(item =>
-    (!query || searchText(item).includes(query))
-  );
+  return catalog.filter(item => matchesQuery(item));
+}
+
+function priceFilters() {
+  const min = Number(String(priceMin?.value || '').replace(',', '.'));
+  const max = Number(String(priceMax?.value || '').replace(',', '.'));
+  return {
+    min: Number.isFinite(min) && min >= 0 ? min : null,
+    max: Number.isFinite(max) && max >= 0 ? max : null,
+  };
+}
+
+function matchesPrice(item) {
+  const { min, max } = priceFilters();
+  if (min == null && max == null) return true;
+  const price = itemPrice(item);
+  if (price == null) return false;
+  if (min != null && price < min) return false;
+  if (max != null && price > max) return false;
+  return true;
 }
 
 function rowsForOptions(ignore) {
   return baseRows().filter(item =>
+    matchesPrice(item) &&
     (ignore === 'type' || !typeFilter?.value || itemType(item) === typeFilter.value) &&
     (ignore === 'material' || !materialFilter?.value || itemMaterial(item) === materialFilter.value) &&
     (ignore === 'color' || !colorFilter?.value || itemColor(item) === colorFilter.value)
@@ -114,6 +167,7 @@ function rowsForOptions(ignore) {
 
 function selectedRows() {
   return baseRows().filter(item =>
+    matchesPrice(item) &&
     (!typeFilter?.value || itemType(item) === typeFilter.value) &&
     (!materialFilter?.value || itemMaterial(item) === materialFilter.value) &&
     (!colorFilter?.value || itemColor(item) === colorFilter.value)
@@ -152,23 +206,45 @@ function fillSelect(select, placeholder, options) {
   select.value = options.some(([key]) => key === previous) ? previous : '';
 }
 
+function topOptions(options, limit = 8) {
+  return [...options]
+    .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label, 'es'))
+    .slice(0, limit);
+}
+
+function renderShortcutChips(container, filterName, options, activeValue) {
+  if (!container) return;
+  const top = topOptions(options);
+  if (!top.length) {
+    container.innerHTML = '<span class="filter-chip-empty">Sin opciones</span>';
+    return;
+  }
+  container.innerHTML = top.map(([key, option]) => `<button type="button" class="filter-chip${key === activeValue ? ' is-active' : ''}" data-filter-target="${escapeAttr(filterName)}" data-filter-value="${escapeAttr(key)}">${escapeHtml(option.label)}<span>${option.count}</span></button>`).join('');
+}
+
 function syncSmartFilters() {
   syncingFilters = true;
+  const typeOptions = optionRows(rowsForOptions('type'), itemType, typeName);
+  const materialOptions = optionRows(rowsForOptions('material'), itemMaterial, materialName);
+  const colorOptions = optionRows(rowsForOptions('color'), itemColor, colorName);
   fillSelect(
     typeFilter,
     'Todos los tipos',
-    optionRows(rowsForOptions('type'), itemType, typeName)
+    typeOptions
   );
   fillSelect(
     materialFilter,
     'Todos los materiales',
-    optionRows(rowsForOptions('material'), itemMaterial, materialName)
+    materialOptions
   );
   fillSelect(
     colorFilter,
     'Todos los colores',
-    optionRows(rowsForOptions('color'), itemColor, colorName)
+    colorOptions
   );
+  renderShortcutChips(typeShortcutChips, 'type', typeOptions, typeFilter?.value || '');
+  renderShortcutChips(materialShortcutChips, 'material', materialOptions, materialFilter?.value || '');
+  renderShortcutChips(colorShortcutChips, 'color', colorOptions, colorFilter?.value || '');
   syncingFilters = false;
 }
 
@@ -178,6 +254,8 @@ function syncUrl() {
   if (typeFilter?.value) params.set('tipo', typeFilter.value);
   if (materialFilter?.value) params.set('material', materialFilter.value);
   if (colorFilter?.value) params.set('color', colorFilter.value);
+  if (priceMin?.value.trim()) params.set('precioMin', priceMin.value.trim());
+  if (priceMax?.value.trim()) params.set('precioMax', priceMax.value.trim());
   if (sortOrder?.value && sortOrder.value !== 'original') params.set('sort', sortOrder.value);
   history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}`);
 }
@@ -188,6 +266,8 @@ function restoreUrlFilters() {
   if (typeFilter) typeFilter.value = params.get('tipo') || '';
   if (materialFilter) materialFilter.value = params.get('material') || '';
   if (colorFilter) colorFilter.value = params.get('color') || '';
+  if (priceMin) priceMin.value = params.get('precioMin') || '';
+  if (priceMax) priceMax.value = params.get('precioMax') || '';
   if (sortOrder) sortOrder.value = params.get('sort') || 'original';
 }
 
@@ -237,13 +317,118 @@ function detailsHtml(item) {
   return `<dl>${itemDetails(item).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`;
 }
 
+function selectedOptionLabel(select, fallback = '') {
+  const option = [...(select?.options || [])].find(current => current.value === select.value);
+  return option ? option.textContent.replace(/\s+\(\d+\)\s*$/, '') : fallback;
+}
+
+function availablePrices() {
+  return catalog.map(itemPrice).filter(price => price != null);
+}
+
+function updatePriceFilterMeta() {
+  const prices = availablePrices();
+  if (!priceFilterMeta || !priceFilterNote) return;
+  if (!prices.length) {
+    priceFilterMeta.textContent = 'Sin precios';
+    priceFilterNote.textContent = 'El filtro se activa cuando las piezas tengan precio cargado.';
+    return;
+  }
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  priceFilterMeta.textContent = `${min.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € - ${max.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  priceFilterNote.textContent = `${prices.length.toLocaleString('es-ES')} piezas tienen precio disponible para filtrar.`;
+}
+
+function activeFilterEntries() {
+  const entries = [];
+  if (search?.value.trim()) entries.push({ key: 'search', label: `Busqueda: ${search.value.trim()}` });
+  if (typeFilter?.value) entries.push({ key: 'type', label: `Tipo: ${selectedOptionLabel(typeFilter, activeTables.types[typeFilter.value] || typeFilter.value)}` });
+  if (materialFilter?.value) entries.push({ key: 'material', label: `Material: ${selectedOptionLabel(materialFilter, activeTables.materials[materialFilter.value] || materialFilter.value)}` });
+  if (colorFilter?.value) entries.push({ key: 'color', label: `Color: ${selectedOptionLabel(colorFilter, activeTables.colors[colorFilter.value] || colorFilter.value)}` });
+  const { min, max } = priceFilters();
+  if (min != null) entries.push({ key: 'priceMin', label: `Desde: ${min.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
+  if (max != null) entries.push({ key: 'priceMax', label: `Hasta: ${max.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` });
+  if (sortOrder?.value && sortOrder.value !== 'original') entries.push({ key: 'sort', label: `Orden: ${selectedOptionLabel(sortOrder, sortOrder.value)}` });
+  return entries;
+}
+
+function hasActiveFilters() {
+  return activeFilterEntries().length > 0;
+}
+
+function renderActiveFilters() {
+  if (!activeFilters) return;
+  const entries = activeFilterEntries();
+  activeFilters.hidden = !entries.length;
+  activeFilters.innerHTML = entries.map(entry => `<button type="button" class="active-filter-chip" data-remove-filter="${escapeAttr(entry.key)}">${escapeHtml(entry.label)}<span aria-hidden="true">×</span></button>`).join('');
+}
+
+function renderResultSummary(totalRows, visibleRows) {
+  if (visibleCount) {
+    visibleCount.textContent = `${visibleRows.length.toLocaleString('es-ES')} piezas`;
+  }
+  if (resultSummary) {
+    if (!hasActiveFilters()) {
+      resultSummary.textContent = `Mostrando las ${totalRows.toLocaleString('es-ES')} piezas del catálogo`;
+    } else {
+      resultSummary.textContent = `${visibleRows.length.toLocaleString('es-ES')} resultados de ${totalRows.toLocaleString('es-ES')} piezas`;
+    }
+  }
+  if (resultHint) {
+    const tokens = queryTokens();
+    if (!hasActiveFilters()) {
+      resultHint.textContent = 'Usa la búsqueda, los selectores o los atajos para refinar el catálogo.';
+    } else if ((priceFilters().min != null || priceFilters().max != null) && !availablePrices().length) {
+      resultHint.textContent = 'Ahora mismo el catálogo base no tiene precios cargados, así que ese filtro no devolverá piezas hasta que haya importes.';
+    } else if (!visibleRows.length) {
+      resultHint.textContent = 'No hay coincidencias con los filtros actuales. Puedes quitar alguno o limpiar todo.';
+    } else if (tokens.length > 1) {
+      resultHint.textContent = `La búsqueda está cruzando ${tokens.length} términos a la vez.`;
+    } else {
+      resultHint.textContent = 'Puedes quitar filtros desde las etiquetas activas o probar los atajos laterales.';
+    }
+  }
+}
+
+function clearAllFilters() {
+  if (search) search.value = '';
+  if (sortOrder) sortOrder.value = 'original';
+  if (typeFilter) typeFilter.value = '';
+  if (materialFilter) materialFilter.value = '';
+  if (colorFilter) colorFilter.value = '';
+  if (priceMin) priceMin.value = '';
+  if (priceMax) priceMax.value = '';
+}
+
+function removeFilter(key) {
+  if (key === 'search' && search) search.value = '';
+  if (key === 'sort' && sortOrder) sortOrder.value = 'original';
+  if (key === 'type' && typeFilter) typeFilter.value = '';
+  if (key === 'material' && materialFilter) materialFilter.value = '';
+  if (key === 'color' && colorFilter) colorFilter.value = '';
+  if (key === 'priceMin' && priceMin) priceMin.value = '';
+  if (key === 'priceMax' && priceMax) priceMax.value = '';
+}
+
+function emptyStateHtml() {
+  const title = hasActiveFilters() ? 'Sin resultados' : emptyTitle;
+  const text = hasActiveFilters()
+    ? 'No hay piezas que coincidan con la combinación actual de búsqueda y filtros.'
+    : emptyText;
+  const action = hasActiveFilters()
+    ? '<button class="empty-state-action" type="button" data-clear-all-filters>Limpiar filtros</button>'
+    : '';
+  return `<section class="empty-state"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(text)}</span>${action}</section>`;
+}
+
 function render() {
   syncSmartFilters();
+  updatePriceFilterMeta();
   const rows = sortRows(selectedRows());
   currentRows = rows;
-  if (visibleCount) {
-    visibleCount.textContent = `${rows.length.toLocaleString('es-ES')} piezas`;
-  }
+  renderResultSummary(catalog.length, rows);
+  renderActiveFilters();
   syncUrl();
   grid.innerHTML = rows.length ? rows.map((item, index) => `<article class="card type-${escapeHtml(itemType(item))}">
     <button class="image image-button" type="button" data-card-index="${index}" aria-label="Ampliar ${escapeHtml(cardTitle(item))}">
@@ -253,7 +438,7 @@ function render() {
       <span class="card-type">${escapeHtml(typeName(item))}</span>
       <strong>${escapeHtml(cardTitle(item))}</strong>
     </div>
-  </article>`).join('') : `<section class="empty-state"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></section>`;
+  </article>`).join('') : emptyStateHtml();
   ensureReturnToEditButton();
 }
 
@@ -371,13 +556,32 @@ sortOrder?.addEventListener('input', render);
 typeFilter?.addEventListener('input', renderFromEvent);
 materialFilter?.addEventListener('input', renderFromEvent);
 colorFilter?.addEventListener('input', renderFromEvent);
+priceMin?.addEventListener('input', render);
+priceMax?.addEventListener('input', render);
 clearFilters?.addEventListener('click', () => {
-  search.value = '';
-  if (sortOrder) sortOrder.value = 'original';
-  if (typeFilter) typeFilter.value = '';
-  if (materialFilter) materialFilter.value = '';
-  if (colorFilter) colorFilter.value = '';
+  clearAllFilters();
   render();
+});
+document.addEventListener('click', event => {
+  const shortcut = event.target.closest('[data-filter-target]');
+  if (shortcut) {
+    const { filterTarget, filterValue } = shortcut.dataset;
+    if (filterTarget === 'type' && typeFilter) typeFilter.value = filterValue || '';
+    if (filterTarget === 'material' && materialFilter) materialFilter.value = filterValue || '';
+    if (filterTarget === 'color' && colorFilter) colorFilter.value = filterValue || '';
+    render();
+    return;
+  }
+  const remove = event.target.closest('[data-remove-filter]');
+  if (remove) {
+    removeFilter(remove.dataset.removeFilter || '');
+    render();
+    return;
+  }
+  if (event.target.closest('[data-clear-all-filters]')) {
+    clearAllFilters();
+    render();
+  }
 });
 ensureReturnToEditButton();
 grid?.addEventListener('click', event => {
