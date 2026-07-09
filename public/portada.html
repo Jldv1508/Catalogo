@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portada · jldv1508</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, rgba(255,255,255,.12), transparent 28%), #0f1422;
+      color: #fff;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .cover-stage {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 20px 16px;
+      text-align: center;
+    }
+    .cover-title {
+      margin: 0;
+      font: 900 clamp(28px, 7vw, 54px)/1.05 Georgia, serif;
+    }
+    .cover-copy {
+      margin: 0;
+      max-width: 420px;
+      color: rgba(255,255,255,.78);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .cover-logo {
+      width: min(54vw, 260px);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.04));
+      border: 1px solid rgba(255,255,255,.18);
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.3);
+      font: 900 clamp(42px, 10vw, 72px)/1 Georgia, serif;
+      letter-spacing: .06em;
+    }
+    .cover-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    .cover-actions a {
+      min-width: 132px;
+      min-height: 42px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: #fff;
+      color: #111;
+      text-decoration: none;
+      font: 900 12px/1 Inter, system-ui, sans-serif;
+      text-transform: uppercase;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
+    }
+    .cover-actions a:last-child {
+      background: transparent;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.24);
+    }
+  </style>
+</head>
+<body>
+  <main class="cover-stage">
+    <h1 class="cover-title">Catalogo</h1>
+    <div class="cover-logo" aria-label="JLDV1508">JLDV</div>
+    <p class="cover-copy">Portada de entrada al proyecto. Desde aqui puedes abrir el catalogo publico o entrar al panel de administracion.</p>
+    <div class="cover-actions" aria-label="Acciones de portada">
+      <a href="/catalogo">Empezar</a>
+      <a href="/admin">Admin</a>
+    </div>
+  </main>
+</body>
+</html>
