@@ -1,5 +1,7 @@
 const STORAGE_KEY = 'jldv1508EditUnlocked';
 const PUBLIC_STORE_FALLBACK = `${STORAGE_KEY}:public-store`;
+const AUTO_BACKUP_INTERVAL_MS = 5 * 60 * 1000;
+const AUTO_BACKUP_LIMIT = 12;
 const STATUS_OPTIONS = {
   disponible: 'Disponible',
   reservado: 'Reservado',
@@ -24,7 +26,10 @@ let state = {
   draft: createDraftItem(),
   publicKey: '',
   catalogUrl: '',
+  lastAutoBackupAt: '',
 };
+let autoBackupTimer = null;
+let lastAutoBackupSignature = '';
 
 function createDraftItem() {
   return {
@@ -77,6 +82,14 @@ function escapeAttr(value) {
   return escapeHtml(value);
 }
 
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function getConfig() {
   return fetch('/api/edit-credentials', { cache: 'no-store' })
     .then(response => {
@@ -120,6 +133,10 @@ function currentPublicKey() {
   return document.body.dataset.publicStorageKey || '';
 }
 
+function currentAutoBackupKey() {
+  return `${state.publicKey || currentPublicKey() || PUBLIC_STORE_FALLBACK}:auto-backups`;
+}
+
 function tablesFor(kind) {
   return state.tables[kind] || DEFAULT_TABLES[kind] || {};
 }
@@ -140,8 +157,23 @@ function itemColor(item) {
   return item.color || '000';
 }
 
+function itemUnit(item) {
+  return String(item.unit || '').trim();
+}
+
+function technicalCode(item) {
+  return [itemType(item), itemSubmodel(item), itemMaterial(item), itemColor(item), itemUnit(item)]
+    .filter(Boolean)
+    .join('-');
+}
+
 function code(item) {
-  return `${itemType(item)}-${itemMaterial(item)}-${itemColor(item)}`;
+  const stored = normalizeCode(item.codigo);
+  const composed = technicalCode(item);
+  const submodel = itemSubmodel(item);
+  if (!stored) return composed;
+  if (!submodel) return stored;
+  return normalizeText(stored).includes(normalizeText(submodel)) ? stored : `${stored} · ${composed}`;
 }
 
 function typeName(item) {
@@ -154,6 +186,29 @@ function submodelName(item) {
   if (!value) return 'Sin submodelo';
   if (typeof entry === 'string') return entry;
   return entry?.label || value;
+}
+
+function baseDescription(item) {
+  return String(item.description || item.descripcion || '').trim();
+}
+
+function generatedDescription(item) {
+  const parts = [typeName(item)];
+  if (itemSubmodel(item)) parts.push(`submodelo ${submodelName(item)}`);
+  if (itemMaterial(item) && itemMaterial(item) !== '000') parts.push(`material ${materialName(item)}`);
+  if (itemColor(item) && itemColor(item) !== '000') parts.push(`color ${colorName(item)}`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+function articleDescription(item) {
+  const manual = baseDescription(item);
+  if (!itemSubmodel(item)) return manual || generatedDescription(item);
+  const submodelCode = itemSubmodel(item);
+  const submodelLabel = submodelName(item);
+  const source = normalizeText(manual);
+  const mentionsSubmodel = source && [submodelCode, submodelLabel].some(token => normalizeText(token) && source.includes(normalizeText(token)));
+  if (manual) return mentionsSubmodel ? manual : `Submodelo ${submodelLabel}. ${manual}`;
+  return generatedDescription(item);
 }
 
 function materialName(item) {
@@ -261,12 +316,108 @@ function savePublicPayload() {
   return true;
 }
 
+function currentSnapshotSignature() {
+  return JSON.stringify({
+    items: state.items,
+    tables: state.tables,
+    filters: state.filters,
+  });
+}
+
+function readAutoBackups() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(currentAutoBackupKey()) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function syncAutoBackupState() {
+  const backups = readAutoBackups();
+  state.lastAutoBackupAt = backups[0]?.savedAt || '';
+  lastAutoBackupSignature = backups[0]?.signature || '';
+}
+
+function renderAutoBackupStatus() {
+  const status = document.querySelector('[data-auto-backup-status]');
+  if (!status) return;
+  const backups = readAutoBackups();
+  if (!backups.length) {
+    status.textContent = 'Autorespaldo local cada 5 min. Aún no hay respaldos automáticos.';
+    return;
+  }
+  const latest = backups[0]?.savedAt ? new Date(backups[0].savedAt).toLocaleString('es-ES') : 'sin fecha';
+  status.textContent = `Autorespaldo local cada 5 min. Último: ${latest}. Historial: ${backups.length}.`;
+}
+
+function saveAutomaticBackup(reason = 'interval') {
+  const signature = currentSnapshotSignature();
+  if (!signature || signature === lastAutoBackupSignature) {
+    renderAutoBackupStatus();
+    return false;
+  }
+  const savedAt = new Date().toISOString();
+  const backups = readAutoBackups().filter(entry => entry?.signature !== signature);
+  backups.unshift({
+    savedAt,
+    reason,
+    signature,
+    payload: {
+      items: state.items,
+      tables: state.tables,
+      filters: state.filters,
+    },
+  });
+  localStorage.setItem(currentAutoBackupKey(), JSON.stringify(backups.slice(0, AUTO_BACKUP_LIMIT)));
+  state.lastAutoBackupAt = savedAt;
+  lastAutoBackupSignature = signature;
+  renderAutoBackupStatus();
+  return true;
+}
+
+function restoreLatestAutoBackup() {
+  const backup = readAutoBackups()[0];
+  const payload = backup?.payload;
+  if (!Array.isArray(payload?.items)) return false;
+  state.items = payload.items.map(baseItem);
+  state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
+  state.filters = {
+    q: String(payload.filters?.q || ''),
+    type: Array.isArray(payload.filters?.type) ? payload.filters.type : [],
+    submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel : [],
+    material: Array.isArray(payload.filters?.material) ? payload.filters.material : [],
+    color: Array.isArray(payload.filters?.color) ? payload.filters.color : [],
+    priceMin: String(payload.filters?.priceMin || ''),
+    priceMax: String(payload.filters?.priceMax || ''),
+  };
+  state.selected.clear();
+  state.lastAutoBackupAt = backup.savedAt || '';
+  lastAutoBackupSignature = backup.signature || currentSnapshotSignature();
+  savePublicPayload();
+  renderWorkspace();
+  return true;
+}
+
+function startAutoBackupTimer() {
+  if (autoBackupTimer || typeof window === 'undefined') return;
+  syncAutoBackupState();
+  autoBackupTimer = window.setInterval(() => {
+    if (!state.unlocked) return;
+    saveAutomaticBackup('interval');
+  }, AUTO_BACKUP_INTERVAL_MS);
+  window.addEventListener('pagehide', () => {
+    if (state.unlocked) saveAutomaticBackup('pagehide');
+  });
+}
+
 function loadEditorState() {
   const payload = loadPublicPayload();
   if (payload) {
     state.items = (payload.items || []).map(baseItem);
     state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
   }
+  syncAutoBackupState();
 }
 
 async function ensureWorkspace() {
@@ -280,7 +431,9 @@ async function ensureWorkspace() {
   if (!state.items.length && state.catalogUrl) {
     const response = await fetch(state.catalogUrl, { cache: 'no-store' });
     const data = await response.json();
-    state.items = Array.isArray(data) ? data.map(baseItem) : [];
+    const rows = Array.isArray(data) ? data : data?.items;
+    if (Array.isArray(rows)) state.items = rows.map(baseItem);
+    if (data && !Array.isArray(data)) state.tables = mergeTables(data.tables || state.tables || DEFAULT_TABLES);
   }
   state.loading = false;
   renderWorkspace();
@@ -365,8 +518,14 @@ function applyBulk() {
   state.selected.forEach(index => {
     const item = state.items[index];
     if (!item) return;
-    if (type) item.type = type;
-    if (submodel) item.submodel = submodel;
+    if (type) {
+      item.type = type;
+      item.tipo = type;
+    }
+    if (submodel) {
+      item.submodel = submodel;
+      item.submodelo = submodel;
+    }
     if (material) item.material = material;
     if (color) item.color = color;
   });
@@ -465,6 +624,7 @@ function deleteTableEntry(kind) {
   if (used) {
     state.items.forEach(item => {
       if (item[affectedField] === codeValue) item[affectedField] = fallback;
+      if (kind === 'submodels' && item.submodelo === codeValue) item.submodelo = fallback;
     });
   }
   savePublicPayload();
@@ -487,8 +647,14 @@ function restorePublicCatalog() {
 }
 
 function makeCsv(items) {
-  const header = ['codigo', 'tipo', 'material', 'color', 'precio_eur', 'estado', 'descripcion', 'archivo'];
-  return [header.join(',')].concat(items.map(item => header.map(key => `"${String(item?.[key] ?? '').replace(/"/g, '""')}"`).join(','))).join('\n');
+  const rows = items.map(item => ({
+    ...item,
+    codigo_visible: code(item),
+    submodelo: itemSubmodel(item),
+    descripcion_visible: articleDescription(item),
+  }));
+  const header = ['codigo', 'codigo_visible', 'tipo', 'submodelo', 'material', 'color', 'precio_eur', 'estado', 'descripcion', 'descripcion_visible', 'archivo'];
+  return [header.join(',')].concat(rows.map(item => header.map(key => `"${String(item?.[key] ?? '').replace(/"/g, '""')}"`).join(','))).join('\n');
 }
 
 function makeJson(items) {
@@ -552,6 +718,10 @@ function createItemFromDraft() {
     foto_numero: normalizeImagePath(draft.archivo) ? 1 : 0,
     fotos_producto: normalizeImagePath(draft.archivo) ? 1 : 0,
   });
+  if (!descripcion) {
+    item.descripcion = generatedDescription(item);
+    item.description = item.descripcion;
+  }
 
   state.items.unshift(item);
   state.selected.clear();
@@ -649,7 +819,6 @@ function renderWorkspace() {
   if (!workspace || !state.unlocked) return;
 
   const visible = visibleItems();
-  const modelCount = modelEntries().length;
   const typeOptions = optionHtml('types');
   const submodelOptions = optionHtml('submodels');
   const materialOptions = optionHtml('materials');
@@ -660,7 +829,6 @@ function renderWorkspace() {
   const bulkColorOptions = '<option value="">Sin cambio</option>' + colorOptions;
   const draft = state.draft || createDraftItem();
   const draftSubmodelOptions = submodelOptionsFor(draft.type || 'PIE', draft.submodel || '');
-  const modelsHtml = modelChipsHtml();
   const visibleCards = visible.map(({ item, index }) => `
     <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}">
       <button class="public-edit-card-image" type="button" data-toggle-card="${index}">
@@ -671,7 +839,7 @@ function renderWorkspace() {
           <label class="public-edit-check"><input type="checkbox" data-card-check="${index}" ${state.selected.has(index) ? 'checked' : ''}> Seleccionar</label>
           <strong>${escapeHtml(code(item))}</strong>
         </div>
-        <div class="public-edit-card-meta">${escapeHtml(typeName(item))} · ${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</div>
+        <div class="public-edit-card-meta">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''} · ${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</div>
         <div class="public-edit-card-fields">
           <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
           <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
@@ -727,7 +895,9 @@ function renderWorkspace() {
         <button type="button" data-download-json>Exportar catálogo público</button>
         <button type="button" data-download-backup>Exportar respaldo completo</button>
         <button type="button" data-restore-public>Restaurar guardado local</button>
+        <button type="button" data-restore-auto-backup>Restaurar último autorespaldo</button>
       </div>
+      <div class="public-edit-helper" data-auto-backup-status></div>
     </section>
 
     <section class="public-edit-section">
@@ -864,7 +1034,7 @@ function renderWorkspace() {
       </div>
       <div class="public-edit-search">
         <div class="public-edit-actions-row">
-          <a href="/catalogo" target="_blank" rel="noopener">Ver publico</a>
+          <a href="/catalogo-publico?volverEdicion=1" target="_blank" rel="noopener">Ver publico</a>
           <button type="button" data-select-visible>Seleccionar visibles</button>
           <button type="button" data-clear-selection>Quitar seleccion</button>
           <button type="button" data-compact-toggle>${state.compact ? 'Vista completa' : 'Vista rapida'}</button>
@@ -959,22 +1129,12 @@ function renderWorkspace() {
   workspace.querySelector('[data-restore-public]').addEventListener('click', () => {
     restorePublicCatalog();
   });
-  workspace.querySelector('[data-apply-bulk]').addEventListener('click', () => {
-    const type = workspace.querySelector('[data-bulk-type]').value;
-    const submodel = workspace.querySelector('[data-bulk-submodel]').value;
-    const material = workspace.querySelector('[data-bulk-material]').value;
-    const color = workspace.querySelector('[data-bulk-color]').value;
-    state.selected.forEach(index => {
-      const item = state.items[index];
-      if (!item) return;
-      if (type) item.type = type;
-      if (submodel) item.submodel = submodel;
-      if (material) item.material = material;
-      if (color) item.color = color;
-    });
-    savePublicPayload();
-    renderWorkspace();
+  workspace.querySelector('[data-restore-auto-backup]').addEventListener('click', () => {
+    if (!restoreLatestAutoBackup()) {
+      alert('Todavia no hay respaldos automaticos para restaurar.');
+    }
   });
+  workspace.querySelector('[data-apply-bulk]').addEventListener('click', applyBulk);
   workspace.querySelectorAll('[data-add-types]').forEach(btn => btn.addEventListener('click', () => addTableEntry('types')));
   workspace.querySelectorAll('[data-add-submodels]').forEach(btn => btn.addEventListener('click', () => addTableEntry('submodels')));
   workspace.querySelectorAll('[data-add-materials]').forEach(btn => btn.addEventListener('click', () => addTableEntry('materials')));
@@ -1083,6 +1243,7 @@ function renderWorkspace() {
       });
     }
   });
+  renderAutoBackupStatus();
 }
 
 function createPanel() {
@@ -1212,6 +1373,7 @@ function initTriggers() {
 function init() {
   createPanel();
   initTriggers();
+  startAutoBackupTimer();
   if (isUnlocked()) {
     const panel = createPanel();
     panel.hidden = false;

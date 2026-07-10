@@ -2,7 +2,7 @@ const TYPE = { PUL: 'Pulsera', ANI: 'Anillo', PEN: 'Pendiente', COL: 'Collar', C
 const COLOR = { '000': 'Pendiente', '001': 'Multicolor', '002': 'Blanco', '003': 'Negro', '004': 'Rojo', '005': 'Plateado', '006': 'Verde', '007': 'Azul', '008': 'Marrón', '009': 'Multicolor', '010': 'Naranja', '011': 'Amarillo', '012': 'Morado', '013': 'Turquesa', '014': 'Rosa', '015': 'Gris', '016': 'Lila', '017': 'Fucsia', '999': 'Pendiente' };
 const MATERIAL = { '000': 'Pendiente', '001': 'Resina', '002': 'Latón', '003': 'Piedra', '004': 'Cristal', '005': 'Acero inoxidable', '006': 'Metal', '007': 'Cuero', '008': 'Tela', '009': 'Material mixto', '010': 'Perla', '011': 'Acero', '012': 'Plata', '013': 'Dorado / baño oro', '999': 'Pendiente' };
 const STATUS = { disponible: 'Disponible', reservado: 'Reservado', vendido: 'Vendido', oculto: 'Oculto' };
-const DEFAULT_TABLES = { types: TYPE, materials: MATERIAL, colors: COLOR };
+const DEFAULT_TABLES = { types: TYPE, submodels: {}, materials: MATERIAL, colors: COLOR };
 const SAVED_FILTERS_KEY = 'jldv1508CatalogSavedFiltersV2';
 
 const grid = document.querySelector('#grid');
@@ -14,9 +14,11 @@ const resultSummary = document.querySelector('#resultSummary');
 const resultHint = document.querySelector('#resultHint');
 const activeFilters = document.querySelector('#activeFilters');
 const typeFilterChips = document.querySelector('#typeFilterChips');
+const submodelFilterChips = document.querySelector('#submodelFilterChips');
 const materialFilterChips = document.querySelector('#materialFilterChips');
 const colorFilterChips = document.querySelector('#colorFilterChips');
 const typeGroupMeta = document.querySelector('#typeGroupMeta');
+const submodelGroupMeta = document.querySelector('#submodelGroupMeta');
 const materialGroupMeta = document.querySelector('#materialGroupMeta');
 const colorGroupMeta = document.querySelector('#colorGroupMeta');
 const filterStateSummary = document.querySelector('#filterStateSummary');
@@ -34,18 +36,21 @@ const emptyText = document.body.dataset.emptyText || 'Estamos preparando una nue
 
 const filterSelections = {
   type: new Set(),
+  submodel: new Set(),
   material: new Set(),
   color: new Set(),
 };
 
 const FILTER_GROUPS = {
   type: { container: typeFilterChips, meta: typeGroupMeta, param: 'tipo', allLabel: 'Todas' },
+  submodel: { container: submodelFilterChips, meta: submodelGroupMeta, param: 'submodelo', allLabel: 'Todos' },
   material: { container: materialFilterChips, meta: materialGroupMeta, param: 'material', allLabel: 'Todos' },
   color: { container: colorFilterChips, meta: colorGroupMeta, param: 'color', allLabel: 'Todos' },
 };
 
 let catalog = [];
 let baseCatalog = [];
+let baseTables = DEFAULT_TABLES;
 let activeTables = DEFAULT_TABLES;
 let currentRows = [];
 let originalIndexById = new Map();
@@ -63,6 +68,7 @@ function mergeTables(source) {
   const base = source || {};
   return {
     types: { ...(DEFAULT_TABLES.types || {}), ...(base.types || {}) },
+    submodels: { ...(DEFAULT_TABLES.submodels || {}), ...(base.submodels || {}) },
     materials: { ...(DEFAULT_TABLES.materials || {}), ...(base.materials || {}) },
     colors: { ...(DEFAULT_TABLES.colors || {}), ...(base.colors || {}) },
   };
@@ -103,6 +109,11 @@ function selectionCount(group) {
 
 function groupLabel(group, key) {
   if (group === 'type') return activeTables.types[key] || key || 'Tipo';
+  if (group === 'submodel') {
+    const entry = activeTables.submodels?.[key];
+    if (typeof entry === 'string') return entry;
+    return entry?.label || key || 'Submodelo';
+  }
   if (group === 'material') return activeTables.materials[key] || key || 'Material';
   if (group === 'color') return activeTables.colors[key] || key || 'Color';
   return key;
@@ -124,6 +135,10 @@ function itemType(item) {
   return item.type || item.tipo || 'PIE';
 }
 
+function itemSubmodel(item) {
+  return item.submodel || item.submodelo || '';
+}
+
 function itemMaterial(item) {
   return item.material || '000';
 }
@@ -132,15 +147,53 @@ function itemColor(item) {
   return item.color || '000';
 }
 
+function submodelName(item) {
+  const value = itemSubmodel(item);
+  const entry = activeTables.submodels?.[value];
+  if (!value) return 'Sin submodelo';
+  if (typeof entry === 'string') return entry;
+  return entry?.label || value;
+}
+
+function technicalCode(item) {
+  return [itemType(item), itemSubmodel(item), itemMaterial(item), itemColor(item), item.unit]
+    .filter(Boolean)
+    .join('-');
+}
+
+function catalogCodeText(item) {
+  const stored = cleanName(item.codigo);
+  const submodel = itemSubmodel(item);
+  const composed = technicalCode(item);
+  if (!stored) return composed;
+  if (!submodel) return stored;
+  return normalizeText(stored).includes(normalizeText(submodel)) ? stored : `${stored} · ${composed}`;
+}
+
+function descriptionText(item) {
+  const manual = cleanName(item.descripcion || item.description);
+  if (!itemSubmodel(item)) return manual;
+  const source = normalizeText(manual);
+  const mentionsSubmodel = source && [itemSubmodel(item), submodelName(item)].some(token => normalizeText(token) && source.includes(normalizeText(token)));
+  if (manual) return mentionsSubmodel ? manual : `Submodelo ${submodelName(item)}. ${manual}`;
+  return [typeName(item), `submodelo ${submodelName(item)}`, itemMaterial(item) !== '000' ? `material ${materialName(item)}` : '', itemColor(item) !== '000' ? `color ${colorName(item)}` : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function searchText(item) {
   return normalizeText([
     item.codigo,
+    technicalCode(item),
     item.referencia_csv,
     item.idf,
     item.nombre_comercial,
     item.productName,
     item.type,
     item.tipo,
+    item.submodel,
+    item.submodelo,
+    submodelName(item),
     typeName(item),
     item.material,
     item.material_nombre,
@@ -151,7 +204,7 @@ function searchText(item) {
     item.estado,
     STATUS[item.estado],
     item.medidas,
-    item.descripcion,
+    descriptionText(item),
   ].join(' '));
 }
 
@@ -175,6 +228,7 @@ function matchesGroup(group, value, ignoreGroup) {
 function rowsForOptions(ignoreGroup) {
   return baseRows().filter(item =>
     matchesGroup('type', itemType(item), ignoreGroup) &&
+    matchesGroup('submodel', itemSubmodel(item), ignoreGroup) &&
     matchesGroup('material', itemMaterial(item), ignoreGroup) &&
     matchesGroup('color', itemColor(item), ignoreGroup)
   );
@@ -183,6 +237,7 @@ function rowsForOptions(ignoreGroup) {
 function selectedRows() {
   return baseRows().filter(item =>
     matchesGroup('type', itemType(item)) &&
+    matchesGroup('submodel', itemSubmodel(item)) &&
     matchesGroup('material', itemMaterial(item)) &&
     matchesGroup('color', itemColor(item))
   );
@@ -233,6 +288,7 @@ function renderFilterGroup(group, options) {
 
 function syncFilterGroups() {
   renderFilterGroup('type', optionRows(rowsForOptions('type'), itemType, typeName));
+  renderFilterGroup('submodel', optionRows(rowsForOptions('submodel'), itemSubmodel, submodelName));
   renderFilterGroup('material', optionRows(rowsForOptions('material'), itemMaterial, materialName));
   renderFilterGroup('color', optionRows(rowsForOptions('color'), itemColor, colorName));
 }
@@ -241,6 +297,7 @@ function syncUrl() {
   const params = new URLSearchParams();
   if (search.value.trim()) params.set('q', search.value.trim());
   if (serializeSelection(activeSelection('type'))) params.set('tipo', serializeSelection(activeSelection('type')));
+  if (serializeSelection(activeSelection('submodel'))) params.set('submodelo', serializeSelection(activeSelection('submodel')));
   if (serializeSelection(activeSelection('material'))) params.set('material', serializeSelection(activeSelection('material')));
   if (serializeSelection(activeSelection('color'))) params.set('color', serializeSelection(activeSelection('color')));
   if (sortOrder?.value && sortOrder.value !== 'original') params.set('sort', sortOrder.value);
@@ -251,6 +308,7 @@ function restoreUrlFilters() {
   const params = new URLSearchParams(location.search);
   search.value = params.get('q') || '';
   filterSelections.type = parseSelection(params.get('tipo'));
+  filterSelections.submodel = parseSelection(params.get('submodelo'));
   filterSelections.material = parseSelection(params.get('material'));
   filterSelections.color = parseSelection(params.get('color'));
   if (sortOrder) sortOrder.value = params.get('sort') || 'original';
@@ -287,14 +345,15 @@ function cardTitle(item) {
 
 function itemDetails(item) {
   return [
-    ['Código', item.codigo || ''],
+    ['Código', catalogCodeText(item)],
     ['Tipo', typeName(item)],
+    ['Submodelo', itemSubmodel(item) ? submodelName(item) : ''],
     ['Material', materialName(item)],
     ['Color', colorName(item)],
     ['Precio', priceText(item.precio_eur ?? item.price) || 'Precio pendiente'],
     ['Estado', `${STATUS[item.estado] || item.estado || 'Disponible'}${item.stock ? ` · Stock ${item.stock}` : ''}`],
     ['Medidas', item.medidas || ''],
-    ['Descripción', item.descripcion || ''],
+    ['Descripción', descriptionText(item)],
   ].filter(([, value]) => String(value || '').trim());
 }
 
@@ -311,6 +370,7 @@ function activeFilterEntries() {
   const entries = [];
   if (search?.value.trim()) entries.push({ key: 'search', label: `Busqueda: ${search.value.trim()}` });
   activeSelection('type').forEach(key => entries.push({ key: `type:${key}`, label: `Tipo: ${groupLabel('type', key)}` }));
+  activeSelection('submodel').forEach(key => entries.push({ key: `submodel:${key}`, label: `Submodelo: ${groupLabel('submodel', key)}` }));
   activeSelection('material').forEach(key => entries.push({ key: `material:${key}`, label: `Material: ${groupLabel('material', key)}` }));
   activeSelection('color').forEach(key => entries.push({ key: `color:${key}`, label: `Color: ${groupLabel('color', key)}` }));
   if (sortOrder?.value && sortOrder.value !== 'original') entries.push({ key: 'sort', label: `Orden: ${selectedOptionLabel(sortOrder, sortOrder.value)}` });
@@ -377,6 +437,7 @@ function renderResultSummary(totalRows, visibleRows) {
 
 function clearAllSelections() {
   filterSelections.type.clear();
+  filterSelections.submodel.clear();
   filterSelections.material.clear();
   filterSelections.color.clear();
 }
@@ -412,6 +473,7 @@ function getPresetPayload() {
     q: search?.value.trim() || '',
     sort: sortOrder?.value || 'original',
     type: [...activeSelection('type')],
+    submodel: [...activeSelection('submodel')],
     material: [...activeSelection('material')],
     color: [...activeSelection('color')],
   };
@@ -422,6 +484,7 @@ function applyPreset(preset) {
   if (search) search.value = payload.q || '';
   if (sortOrder) sortOrder.value = payload.sort || 'original';
   filterSelections.type = new Set(payload.type || []);
+  filterSelections.submodel = new Set(payload.submodel || []);
   filterSelections.material = new Set(payload.material || []);
   filterSelections.color = new Set(payload.color || []);
   render();
@@ -472,6 +535,7 @@ function presetSummary(preset) {
   const parts = [];
   if (filters.q) parts.push(`Busqueda: ${filters.q}`);
   if (filters.type?.length) parts.push(`${filters.type.length} tipos`);
+  if (filters.submodel?.length) parts.push(`${filters.submodel.length} submodelos`);
   if (filters.material?.length) parts.push(`${filters.material.length} materiales`);
   if (filters.color?.length) parts.push(`${filters.color.length} colores`);
   if (filters.sort && filters.sort !== 'original') parts.push(`Orden ${filters.sort}`);
@@ -525,7 +589,7 @@ function render() {
       ${catalogImageHtml(item)}
     </button>
     <div class="card-info">
-      <span class="card-type">${escapeHtml(typeName(item))}</span>
+      <span class="card-type">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''}</span>
       <strong>${escapeHtml(cardTitle(item))}</strong>
     </div>
   </article>`).join('') : emptyStateHtml();
@@ -571,6 +635,13 @@ function openViewer(item) {
 function ensureReturnToEditButton() {
   const params = new URLSearchParams(location.search);
   let shouldShow = params.get('volverEdicion') === '1';
+  if (shouldShow) {
+    try {
+      const until = `${Date.now() + 1000 * 60 * 60 * 12}`;
+      sessionStorage.setItem('jldv1508ReturnToEdit', until);
+      localStorage.setItem('jldv1508ReturnToEdit', until);
+    } catch {}
+  }
   try {
     const raw = sessionStorage.getItem('jldv1508ReturnToEdit') || localStorage.getItem('jldv1508ReturnToEdit') || '';
     const until = Number(raw);
@@ -611,6 +682,14 @@ function rowKey(item) {
   return item.codigo || item.archivo || item.referencia_csv || `${item.tipo || ''}-${item.material || ''}-${item.color || ''}-${item.nombre_comercial || ''}`;
 }
 
+function normalizeCatalogPayload(payload) {
+  if (Array.isArray(payload)) return { items: payload, tables: null };
+  return {
+    items: Array.isArray(payload?.items) ? payload.items : [],
+    tables: payload?.tables || null,
+  };
+}
+
 function mergeCatalogRows(baseRows, extraRows) {
   const rows = Array.isArray(baseRows) ? [...baseRows] : [];
   const extras = Array.isArray(extraRows) ? extraRows : [];
@@ -628,7 +707,7 @@ function mergeCatalogRows(baseRows, extraRows) {
 
 function refreshPublicCatalog() {
   const localData = localPublicData();
-  if (localData?.tables) activeTables = mergeTables(localData.tables);
+  activeTables = localData?.tables ? mergeTables(localData.tables) : baseTables;
   catalog = mergeCatalogRows(baseCatalog, localData?.items);
   originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
   render();
@@ -699,10 +778,12 @@ savedFilterPresets = loadSavedFilters();
 fetch(catalogUrl)
   .then(response => response.json())
   .then(data => {
-    baseCatalog = Array.isArray(data) ? [...data] : [];
+    const payload = normalizeCatalogPayload(data);
+    baseCatalog = [...payload.items];
+    baseTables = mergeTables(payload.tables || DEFAULT_TABLES);
     restoreUrlFilters();
     const localData = localPublicData();
-    if (localData?.tables) activeTables = mergeTables(localData.tables);
+    activeTables = localData?.tables ? mergeTables(localData.tables) : baseTables;
     catalog = mergeCatalogRows(baseCatalog, localData?.items);
     originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
     render();
