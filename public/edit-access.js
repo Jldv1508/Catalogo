@@ -831,209 +831,248 @@ function renderWorkspace() {
   const draftSubmodelOptions = submodelOptionsFor(draft.type || 'PIE', draft.submodel || '');
   const visibleCards = visible.map(({ item, index }) => `
     <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}">
-      <button class="public-edit-card-image" type="button" data-toggle-card="${index}">
-        ${editorImageHtml(item)}
-      </button>
       <div class="public-edit-card-body">
         <div class="public-edit-card-top">
           <label class="public-edit-check"><input type="checkbox" data-card-check="${index}" ${state.selected.has(index) ? 'checked' : ''}> Seleccionar</label>
           <strong>${escapeHtml(code(item))}</strong>
         </div>
-        <div class="public-edit-card-meta">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''} · ${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</div>
-        <div class="public-edit-card-fields">
-          <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
-          <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
-          <label>Material<select data-item-field="material" data-index="${index}">${materialOptions}</select></label>
-          <label>Color<select data-item-field="color" data-index="${index}">${colorOptions}</select></label>
-          <label>Unidad<input data-item-field="unit" data-index="${index}" value="${escapeAttr(item.unit || '')}" maxlength="3"></label>
-          <label>Precio<input data-item-field="price" data-index="${index}" value="${escapeAttr(item.price || item.precio_eur || '')}" inputmode="decimal" placeholder="0,00"></label>
-          <label>Stock<input data-item-field="stock" data-index="${index}" value="${escapeAttr(item.stock || '')}" inputmode="numeric" placeholder="1"></label>
-          <label>Estado<select data-item-field="estado" data-index="${index}">${statusOptionsHtml(item.estado || 'disponible')}</select></label>
-          <label class="full">Imagen<input data-item-field="archivo" data-index="${index}" value="${escapeAttr(catalogImage(item))}" placeholder="image-catalog/nombre.jpg"></label>
-          <label>Encuadre X<input data-item-field="image_x" data-index="${index}" value="${escapeAttr(item.image_x ?? 50)}" inputmode="decimal" placeholder="50"></label>
-          <label>Encuadre Y<input data-item-field="image_y" data-index="${index}" value="${escapeAttr(item.image_y ?? 50)}" inputmode="decimal" placeholder="50"></label>
-          <label>Zoom<input data-item-field="image_zoom" data-index="${index}" value="${escapeAttr(item.image_zoom ?? 1)}" inputmode="decimal" placeholder="1"></label>
-          <label class="full">Nombre<input data-item-field="productName" data-index="${index}" value="${escapeAttr(item.productName || item.nombre_comercial || '')}"></label>
-          <label class="full">Medidas<input data-item-field="medidas" data-index="${index}" value="${escapeAttr(item.medidas || item.measures || '')}"></label>
-          <label class="full">Descripcion<textarea data-item-field="description" data-index="${index}">${escapeHtml(item.description || item.descripcion || '')}</textarea></label>
+        <div class="public-edit-card-name">${escapeHtml(item.productName || item.nombre_comercial || 'Sin nombre visible')}</div>
+        <div class="public-edit-card-meta">
+          <span>${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''} · ${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</span>
+          <span>${catalogImage(item) ? 'Imagen lista' : 'Sin imagen'}</span>
         </div>
+        <details class="public-edit-card-editor" ${state.selected.has(index) && !state.compact ? 'open' : ''}>
+          <summary>${state.selected.has(index) ? 'Ocultar edición' : 'Abrir edición'}</summary>
+          <div class="public-edit-card-fields">
+            <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
+            <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
+            <label>Material<select data-item-field="material" data-index="${index}">${materialOptions}</select></label>
+            <label>Color<select data-item-field="color" data-index="${index}">${colorOptions}</select></label>
+            <label>Unidad<input data-item-field="unit" data-index="${index}" value="${escapeAttr(item.unit || '')}" maxlength="3"></label>
+            <label>Precio<input data-item-field="price" data-index="${index}" value="${escapeAttr(item.price || item.precio_eur || '')}" inputmode="decimal" placeholder="0,00"></label>
+            <label>Stock<input data-item-field="stock" data-index="${index}" value="${escapeAttr(item.stock || '')}" inputmode="numeric" placeholder="1"></label>
+            <label>Estado<select data-item-field="estado" data-index="${index}">${statusOptionsHtml(item.estado || 'disponible')}</select></label>
+            <label class="full">Nombre<input data-item-field="productName" data-index="${index}" value="${escapeAttr(item.productName || item.nombre_comercial || '')}"></label>
+            <label class="full">Medidas<input data-item-field="medidas" data-index="${index}" value="${escapeAttr(item.medidas || item.measures || '')}"></label>
+            <label class="full">Descripcion<textarea data-item-field="description" data-index="${index}">${escapeHtml(item.description || item.descripcion || '')}</textarea></label>
+            <details class="public-edit-card-subpanel">
+              <summary>Imagen y encuadre</summary>
+              <div class="public-edit-card-fields public-edit-card-fields--advanced">
+                <label class="full">Imagen<input data-item-field="archivo" data-index="${index}" value="${escapeAttr(catalogImage(item))}" placeholder="image-catalog/nombre.jpg"></label>
+                <label>Encuadre X<input data-item-field="image_x" data-index="${index}" value="${escapeAttr(item.image_x ?? 50)}" inputmode="decimal" placeholder="50"></label>
+                <label>Encuadre Y<input data-item-field="image_y" data-index="${index}" value="${escapeAttr(item.image_y ?? 50)}" inputmode="decimal" placeholder="50"></label>
+                <label>Zoom<input data-item-field="image_zoom" data-index="${index}" value="${escapeAttr(item.image_zoom ?? 1)}" inputmode="decimal" placeholder="1"></label>
+              </div>
+            </details>
+          </div>
+        </details>
       </div>
     </article>
   `).join('');
 
   workspace.innerHTML = `
-    <section class="public-edit-section public-edit-section--overview">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Buscar</strong>
-          <span>Por palabra, modelo, submodelo, material, color y precio</span>
+    <details class="public-edit-section public-edit-section--overview public-edit-section--collapsible public-edit-section--sticky" open>
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Buscar</strong>
+            <span>Por palabra, modelo, submodelo, material, color y precio</span>
+          </div>
+          <span class="public-edit-state public-edit-state--inline">${visible.length} resultados</span>
         </div>
-        <span class="public-edit-state public-edit-state--inline">${visible.length} resultados</span>
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-search public-edit-search--minimal">
+          <label>Palabra<input data-filter-q placeholder="Código, descripción, material..."></label>
+          <label>Precio mínimo<input data-filter-price-min inputmode="decimal" placeholder="0,00"></label>
+          <label>Precio máximo<input data-filter-price-max inputmode="decimal" placeholder="99,00"></label>
+          ${checkboxFilterHtml('type', 'Modelo', 'types')}
+          ${checkboxFilterHtml('submodel', 'Submodelo', 'submodels')}
+          ${checkboxFilterHtml('material', 'Material', 'materials')}
+          ${checkboxFilterHtml('color', 'Color', 'colors')}
+        </div>
       </div>
-      <div class="public-edit-search">
-        <label>Palabra<input data-filter-q placeholder="Código, descripción, material..."></label>
-        <label>Precio mínimo<input data-filter-price-min inputmode="decimal" placeholder="0,00"></label>
-        <label>Precio máximo<input data-filter-price-max inputmode="decimal" placeholder="99,00"></label>
-        ${checkboxFilterHtml('type', 'Modelo', 'types')}
-        ${checkboxFilterHtml('submodel', 'Submodelo', 'submodels')}
-        ${checkboxFilterHtml('material', 'Material', 'materials')}
-        ${checkboxFilterHtml('color', 'Color', 'colors')}
-      </div>
-    </section>
+    </details>
 
-    <section class="public-edit-section public-edit-section--io">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Importación / Exportación</strong>
-          <span>Entrada y salida de catálogo, resultados y respaldo</span>
+    <details class="public-edit-section public-edit-section--collapsible" open>
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Importación / Exportación</strong>
+            <span>Entrada y salida de catálogo, resultados y respaldo</span>
+          </div>
         </div>
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-actions-row public-edit-actions-row--backup">
+          <input data-import-json type="file" accept=".json,application/json" hidden>
+          <button type="button" data-import-json-button>Importar JSON</button>
+          <button type="button" data-download-csv>Exportar CSV visible</button>
+          <button type="button" data-download-json>Exportar catálogo público</button>
+          <button type="button" data-download-backup>Exportar respaldo completo</button>
+          <button type="button" data-restore-public>Restaurar guardado local</button>
+          <button type="button" data-restore-auto-backup>Restaurar último autorespaldo</button>
+        </div>
+        <div class="public-edit-helper" data-auto-backup-status></div>
       </div>
-      <div class="public-edit-actions-row">
-        <input data-import-json type="file" accept=".json,application/json" hidden>
-        <button type="button" data-import-json-button>Importar JSON</button>
-        <button type="button" data-download-csv>Exportar CSV visible</button>
-        <button type="button" data-download-json>Exportar catálogo público</button>
-        <button type="button" data-download-backup>Exportar respaldo completo</button>
-        <button type="button" data-restore-public>Restaurar guardado local</button>
-        <button type="button" data-restore-auto-backup>Restaurar último autorespaldo</button>
-      </div>
-      <div class="public-edit-helper" data-auto-backup-status></div>
-    </section>
+    </details>
 
-    <section class="public-edit-section">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Nueva tarjeta</strong>
-          <span>Crea una pieza nueva y asi anades mas tarjetas con su imagen</span>
+    <details class="public-edit-section public-edit-section--collapsible" open>
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Nueva tarjeta</strong>
+            <span>Formulario simplificado con imagen en opciones avanzadas</span>
+          </div>
+        </div>
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-create-grid">
+          <label>Codigo<input data-create-field="codigo" value="${escapeAttr(draft.codigo)}" placeholder="Ej. BISU-PEN-0001"></label>
+          <label>Referencia<input data-create-field="referencia_csv" value="${escapeAttr(draft.referencia_csv)}" placeholder="Si la dejas vacia usa el codigo"></label>
+          <label>IDF<input data-create-field="idf" value="${escapeAttr(draft.idf)}" placeholder="Modelo o identificador interno"></label>
+          <label>Codigo producto<input data-create-field="codigo_producto" value="${escapeAttr(draft.codigo_producto)}" placeholder="Opcional"></label>
+          <label>Tipo<select data-create-field="type">${typeOptions}</select></label>
+          <label>Submodelo<select data-create-field="submodel">${draftSubmodelOptions}</select></label>
+          <label>Material<select data-create-field="material">${materialOptions}</select></label>
+          <label>Color<select data-create-field="color">${colorOptions}</select></label>
+          <label>Unidad<input data-create-field="unit" value="${escapeAttr(draft.unit)}" maxlength="3" inputmode="numeric" placeholder="001"></label>
+          <label>Precio<input data-create-field="price" value="${escapeAttr(draft.price)}" inputmode="decimal" placeholder="0,00"></label>
+          <label>Stock<input data-create-field="stock" value="${escapeAttr(draft.stock)}" inputmode="numeric" placeholder="1"></label>
+          <label>Estado<select data-create-field="estado">${statusOptionsHtml(draft.estado || 'disponible')}</select></label>
+          <label class="full">Nombre visible<input data-create-field="productName" value="${escapeAttr(draft.productName)}" placeholder="Nombre comercial"></label>
+          <label class="full">Medidas<input data-create-field="medidas" value="${escapeAttr(draft.medidas)}" placeholder="Opcional"></label>
+          <label class="full">Descripcion<textarea data-create-field="descripcion" placeholder="Descripcion breve de la pieza">${escapeHtml(draft.descripcion)}</textarea></label>
+        </div>
+        <details class="public-edit-card-subpanel public-edit-create-advanced">
+          <summary>Imagen y encuadre</summary>
+          <div class="public-edit-create-grid">
+            <label class="full">Ruta de imagen<input data-create-field="archivo" value="${escapeAttr(draft.archivo)}" placeholder="image-catalog/mi-nueva-pieza.jpg"></label>
+            <label>Encuadre X<input data-create-field="image_x" value="${escapeAttr(draft.image_x)}" inputmode="decimal" placeholder="50"></label>
+            <label>Encuadre Y<input data-create-field="image_y" value="${escapeAttr(draft.image_y)}" inputmode="decimal" placeholder="50"></label>
+            <label>Zoom<input data-create-field="image_zoom" value="${escapeAttr(draft.image_zoom)}" inputmode="decimal" placeholder="1"></label>
+          </div>
+        </details>
+        <div class="public-edit-actions-row public-edit-actions-row--compact">
+          <button type="button" data-create-item>Anadir tarjeta</button>
+          <button type="button" data-reset-draft>Limpiar formulario</button>
         </div>
       </div>
-      <div class="public-edit-create-grid">
-        <label>Codigo<input data-create-field="codigo" value="${escapeAttr(draft.codigo)}" placeholder="Ej. BISU-PEN-0001"></label>
-        <label>Referencia<input data-create-field="referencia_csv" value="${escapeAttr(draft.referencia_csv)}" placeholder="Si la dejas vacia usa el codigo"></label>
-        <label>IDF<input data-create-field="idf" value="${escapeAttr(draft.idf)}" placeholder="Modelo o identificador interno"></label>
-        <label>Codigo producto<input data-create-field="codigo_producto" value="${escapeAttr(draft.codigo_producto)}" placeholder="Opcional"></label>
-        <label>Tipo<select data-create-field="type">${typeOptions}</select></label>
-        <label>Submodelo<select data-create-field="submodel">${draftSubmodelOptions}</select></label>
-        <label>Material<select data-create-field="material">${materialOptions}</select></label>
-        <label>Color<select data-create-field="color">${colorOptions}</select></label>
-        <label>Unidad<input data-create-field="unit" value="${escapeAttr(draft.unit)}" maxlength="3" inputmode="numeric" placeholder="001"></label>
-        <label>Precio<input data-create-field="price" value="${escapeAttr(draft.price)}" inputmode="decimal" placeholder="0,00"></label>
-        <label>Stock<input data-create-field="stock" value="${escapeAttr(draft.stock)}" inputmode="numeric" placeholder="1"></label>
-        <label>Estado<select data-create-field="estado">${statusOptionsHtml(draft.estado || 'disponible')}</select></label>
-        <label class="full">Nombre visible<input data-create-field="productName" value="${escapeAttr(draft.productName)}" placeholder="Nombre comercial"></label>
-        <label class="full">Ruta de imagen<input data-create-field="archivo" value="${escapeAttr(draft.archivo)}" placeholder="image-catalog/mi-nueva-pieza.jpg"></label>
-        <label>Encuadre X<input data-create-field="image_x" value="${escapeAttr(draft.image_x)}" inputmode="decimal" placeholder="50"></label>
-        <label>Encuadre Y<input data-create-field="image_y" value="${escapeAttr(draft.image_y)}" inputmode="decimal" placeholder="50"></label>
-        <label>Zoom<input data-create-field="image_zoom" value="${escapeAttr(draft.image_zoom)}" inputmode="decimal" placeholder="1"></label>
-        <label class="full">Medidas<input data-create-field="medidas" value="${escapeAttr(draft.medidas)}" placeholder="Opcional"></label>
-        <label class="full">Descripcion<textarea data-create-field="descripcion" placeholder="Descripcion breve de la pieza">${escapeHtml(draft.descripcion)}</textarea></label>
-      </div>
-      <div class="public-edit-actions-row">
-        <button type="button" data-create-item>Anadir tarjeta</button>
-        <button type="button" data-reset-draft>Limpiar formulario</button>
-        <span class="public-edit-helper">Sube la imagen al directorio <code>public/image-catalog/</code> y pega aqui su ruta relativa.</span>
-      </div>
-    </section>
+    </details>
 
-    <section class="public-edit-section">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Crear</strong>
-          <span>Modelos, submodelos dependientes del modelo, materiales y colores</span>
+    <details class="public-edit-section public-edit-section--tables public-edit-section--collapsible">
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Tablas</strong>
+            <span>Modelos, submodelos, materiales y colores en modo minimalista</span>
+          </div>
+        </div>
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-tables public-edit-tables--creation">
+          <details class="public-edit-table-box" open>
+            <summary class="public-edit-table-summary"><strong>Modelos</strong><span>Crear, editar y borrar</span></summary>
+            <div class="public-edit-table-content">
+              <label>Codigo<input data-new-types-code placeholder="Ej. PUL"></label>
+              <label>Nombre<input data-new-types-label placeholder="Nombre del modelo"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-add-types>Crear modelo</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Modelo a editar<select data-edit-types-select><option value="">Elegir</option>${typeOptions}</select></label>
+              <label>Nuevo nombre<input data-edit-types-label placeholder="Nombre actualizado"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-edit-types>Guardar cambios</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Borrar modelo<select data-delete-types><option value="">Elegir</option>${typeOptions}</select></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-remove-types>Borrar modelo</button>
+              </div>
+            </div>
+          </details>
+          <details class="public-edit-table-box public-edit-table-box--models">
+            <summary class="public-edit-table-summary"><strong>Submodelos</strong><span>Dependen del modelo</span></summary>
+            <div class="public-edit-table-content">
+              <label>Modelo padre<select data-new-submodels-model>${typeOptions}</select></label>
+              <label>Codigo<input data-new-submodels-code placeholder="Ej. PUL-001"></label>
+              <label>Nombre<input data-new-submodels-label placeholder="Nombre del submodelo"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-add-submodels>Crear submodelo</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Submodelo a editar<select data-edit-submodels-select><option value="">Elegir</option>${submodelOptions}</select></label>
+              <label>Modelo padre<select data-edit-submodels-model>${typeOptions}</select></label>
+              <label>Nuevo nombre<input data-edit-submodels-label placeholder="Nombre actualizado"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-edit-submodels>Guardar cambios</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Borrar submodelo<select data-delete-submodels><option value="">Elegir</option>${submodelOptions}</select></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-remove-submodels>Borrar submodelo</button>
+              </div>
+            </div>
+          </details>
+          <details class="public-edit-table-box">
+            <summary class="public-edit-table-summary"><strong>Materiales</strong><span>Gestion rápida</span></summary>
+            <div class="public-edit-table-content">
+              <label>Codigo<input data-new-materials-code placeholder="Ej. 014"></label>
+              <label>Nombre<input data-new-materials-label placeholder="Nombre del material"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-add-materials>Crear material</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Material a editar<select data-edit-materials-select><option value="">Elegir</option>${materialOptions}</select></label>
+              <label>Nuevo nombre<input data-edit-materials-label placeholder="Nombre actualizado"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-edit-materials>Guardar cambios</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Borrar material<select data-delete-materials><option value="">Elegir</option>${materialOptions}</select></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-remove-materials>Borrar material</button>
+              </div>
+            </div>
+          </details>
+          <details class="public-edit-table-box">
+            <summary class="public-edit-table-summary"><strong>Colores</strong><span>Gestion rápida</span></summary>
+            <div class="public-edit-table-content">
+              <label>Codigo<input data-new-colors-code placeholder="Ej. 018"></label>
+              <label>Nombre<input data-new-colors-label placeholder="Nombre del color"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-add-colors>Crear color</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Color a editar<select data-edit-colors-select><option value="">Elegir</option>${colorOptions}</select></label>
+              <label>Nuevo nombre<input data-edit-colors-label placeholder="Nombre actualizado"></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-edit-colors>Guardar cambios</button>
+              </div>
+              <div class="public-edit-divider"></div>
+              <label>Borrar color<select data-delete-colors><option value="">Elegir</option>${colorOptions}</select></label>
+              <div class="public-edit-inline-actions public-edit-inline-actions--single">
+                <button type="button" data-remove-colors>Borrar color</button>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
-      <div class="public-edit-tables public-edit-tables--creation">
-        <div class="public-edit-table-box">
-          <strong>Modelos</strong>
-          <label>Codigo<input data-new-types-code placeholder="Ej. PUL"></label>
-          <label>Nombre<input data-new-types-label placeholder="Nombre del modelo"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-add-types>Crear modelo</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Modelo a editar<select data-edit-types-select><option value="">Elegir</option>${typeOptions}</select></label>
-          <label>Nuevo nombre<input data-edit-types-label placeholder="Nombre actualizado"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-edit-types>Guardar cambios</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Borrar modelo<select data-delete-types><option value="">Elegir</option>${typeOptions}</select></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-remove-types>Borrar modelo</button>
-          </div>
-        </div>
-        <div class="public-edit-table-box public-edit-table-box--models">
-          <strong>Submodelos</strong>
-          <label>Modelo padre<select data-new-submodels-model>${typeOptions}</select></label>
-          <label>Codigo<input data-new-submodels-code placeholder="Ej. PUL-001"></label>
-          <label>Nombre<input data-new-submodels-label placeholder="Nombre del submodelo"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-add-submodels>Crear submodelo</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Submodelo a editar<select data-edit-submodels-select><option value="">Elegir</option>${submodelOptions}</select></label>
-          <label>Modelo padre<select data-edit-submodels-model>${typeOptions}</select></label>
-          <label>Nuevo nombre<input data-edit-submodels-label placeholder="Nombre actualizado"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-edit-submodels>Guardar cambios</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Borrar submodelo<select data-delete-submodels><option value="">Elegir</option>${submodelOptions}</select></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-remove-submodels>Borrar submodelo</button>
-          </div>
-        </div>
-        <div class="public-edit-table-box">
-          <strong>Materiales</strong>
-          <label>Codigo<input data-new-materials-code placeholder="Ej. 014"></label>
-          <label>Nombre<input data-new-materials-label placeholder="Nombre del material"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-add-materials>Crear material</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Material a editar<select data-edit-materials-select><option value="">Elegir</option>${materialOptions}</select></label>
-          <label>Nuevo nombre<input data-edit-materials-label placeholder="Nombre actualizado"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-edit-materials>Guardar cambios</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Borrar material<select data-delete-materials><option value="">Elegir</option>${materialOptions}</select></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-remove-materials>Borrar material</button>
-          </div>
-        </div>
-        <div class="public-edit-table-box">
-          <strong>Colores</strong>
-          <label>Codigo<input data-new-colors-code placeholder="Ej. 018"></label>
-          <label>Nombre<input data-new-colors-label placeholder="Nombre del color"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-add-colors>Crear color</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Color a editar<select data-edit-colors-select><option value="">Elegir</option>${colorOptions}</select></label>
-          <label>Nuevo nombre<input data-edit-colors-label placeholder="Nombre actualizado"></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-edit-colors>Guardar cambios</button>
-          </div>
-          <div class="public-edit-divider"></div>
-          <label>Borrar color<select data-delete-colors><option value="">Elegir</option>${colorOptions}</select></label>
-          <div class="public-edit-inline-actions public-edit-inline-actions--single">
-            <button type="button" data-remove-colors>Borrar color</button>
-          </div>
-        </div>
-      </div>
-    </section>
+    </details>
 
-    <section class="public-edit-section">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Editar</strong>
-          <span>Edicion masiva de las piezas seleccionadas</span>
+    <details class="public-edit-section public-edit-section--collapsible public-edit-section--sticky" open>
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Edición masiva</strong>
+            <span>Selección, acciones rápidas y cambios en lote</span>
+          </div>
+          <span class="public-edit-state public-edit-state--inline">${state.selected.size} seleccionadas</span>
         </div>
-        <span class="public-edit-state public-edit-state--inline">${state.selected.size} seleccionadas</span>
-      </div>
-      <div class="public-edit-search">
-        <div class="public-edit-actions-row">
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-actions-row public-edit-actions-row--header">
           <a href="/catalogo-publico?volverEdicion=1" target="_blank" rel="noopener">Ver publico</a>
           <button type="button" data-select-visible>Seleccionar visibles</button>
           <button type="button" data-clear-selection>Quitar seleccion</button>
@@ -1041,26 +1080,34 @@ function renderWorkspace() {
           <button type="button" data-invert-visible>Invertir visibles</button>
           <button type="button" data-apply-bulk>Aplicar a seleccionadas</button>
         </div>
-      </div>
-      <div class="public-edit-bulk">
-        <label>Tipo<select data-bulk-type>${bulkTypeOptions}</select></label>
-        <label>Submodelo<select data-bulk-submodel>${bulkSubmodelOptions}</select></label>
-        <label>Material<select data-bulk-material>${bulkMaterialOptions}</select></label>
-        <label>Color<select data-bulk-color>${bulkColorOptions}</select></label>
-      </div>
-    </section>
-
-    <section class="public-edit-section">
-      <div class="public-edit-section-head">
-        <div>
-          <strong>Vista rapida</strong>
-          <span>Piezas compactas para seleccionar sin perder contexto</span>
+        <div class="public-edit-bulk">
+          <label>Tipo<select data-bulk-type>${bulkTypeOptions}</select></label>
+          <label>Submodelo<select data-bulk-submodel>${bulkSubmodelOptions}</select></label>
+          <label>Material<select data-bulk-material>${bulkMaterialOptions}</select></label>
+          <label>Color<select data-bulk-color>${bulkColorOptions}</select></label>
+        </div>
+        <div class="public-edit-selection-help">
+          <strong>Navegación</strong>
+          <span>Abre solo las tarjetas que necesites y mantén visible este bloque mientras te desplazas.</span>
         </div>
       </div>
-      <div class="public-edit-grid${state.compact ? ' is-compact' : ''}">
-        ${visibleCards || '<div class="public-edit-empty">No hay piezas visibles.</div>'}
+    </details>
+
+    <details class="public-edit-section public-edit-section--cards public-edit-section--collapsible" open>
+      <summary class="public-edit-section-summary">
+        <div class="public-edit-section-head">
+          <div>
+            <strong>Tarjetas</strong>
+            <span>Vista clara con edición desplegable por pieza</span>
+          </div>
+        </div>
+      </summary>
+      <div class="public-edit-section-content">
+        <div class="public-edit-grid${state.compact ? ' is-compact' : ''}">
+          ${visibleCards || '<div class="public-edit-empty">No hay piezas visibles.</div>'}
+        </div>
       </div>
-    </section>
+    </details>
   `;
 
   workspace.querySelector('[data-filter-q]').value = state.filters.q;
@@ -1151,13 +1198,6 @@ function renderWorkspace() {
   workspace.querySelectorAll('[data-edit-submodels-select]').forEach(select => select.addEventListener('change', () => syncEditEntry('submodels')));
   workspace.querySelectorAll('[data-edit-materials-select]').forEach(select => select.addEventListener('change', () => syncEditEntry('materials')));
   workspace.querySelectorAll('[data-edit-colors-select]').forEach(select => select.addEventListener('change', () => syncEditEntry('colors')));
-
-  workspace.querySelectorAll('[data-toggle-card]').forEach(button => {
-    button.addEventListener('click', () => {
-      const index = Number(button.dataset.toggleCard);
-      toggleSelected(index, !state.selected.has(index));
-    });
-  });
 
   workspace.querySelectorAll('[data-card-check]').forEach(input => {
     input.addEventListener('change', () => toggleSelected(Number(input.dataset.cardCheck), input.checked));

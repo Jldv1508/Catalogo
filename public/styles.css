@@ -2716,3 +2716,228 @@ body.blog main.blog-main {
   .item-viewer-details div { grid-template-columns:1fr; gap:3px; }
   .card-details div { grid-template-columns:1fr; gap:2px; }
 }
+
+#publicEditPanel {
+  scroll-behavior:smooth;
+}
+.public-edit-head {
+  position:sticky;
+  top:0;
+  z-index:24;
+  background:#fbfaf7;
+}
+.public-edit-section--collapsible {
+  overflow:visible;
+}
+.public-edit-section-summary,
+.public-edit-table-summary,
+.public-edit-card-subpanel summary {
+  list-style:none;
+  cursor:pointer;
+}
+.public-edit-section-summary::-webkit-details-marker,
+.public-edit-table-summary::-webkit-details-marker,
+.public-edit-card-subpanel summary::-webkit-details-marker {
+  display:none;
+}
+.public-edit-section-summary {
+  position:relative;
+  display:block;
+}
+.public-edit-section-summary::after {
+  content:'+';
+  position:absolute;
+  top:50%;
+  right:0;
+  transform:translateY(-50%);
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:1px solid #ddd7cf;
+  border-radius:8px;
+  background:#fff;
+  color:#5f574d;
+  font-weight:900;
+}
+.public-edit-section--collapsible[open] > .public-edit-section-summary::after {
+  content:'-';
+}
+.public-edit-section--sticky > .public-edit-section-summary {
+  position:sticky;
+  top:58px;
+  z-index:14;
+  background:#fff;
+}
+.public-edit-section-summary .public-edit-section-head {
+  padding:0 40px 0 0;
+  border-bottom:0;
+}
+.public-edit-section-content {
+  display:grid;
+  gap:12px;
+  padding-top:12px;
+}
+.public-edit-section--cards {
+  padding:12px;
+  background:#fff;
+  border:1px solid #e7e2da;
+  border-radius:8px;
+}
+.public-edit-selection-help {
+  position:sticky;
+  top:112px;
+  z-index:10;
+}
+.public-edit-table-box {
+  padding:0;
+  overflow:hidden;
+}
+.public-edit-table-summary {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:12px;
+}
+.public-edit-table-summary strong {
+  margin:0;
+}
+.public-edit-table-summary span {
+  color:#756d64;
+  font-size:12px;
+  font-weight:750;
+}
+.public-edit-table-content {
+  display:grid;
+  gap:10px;
+  padding:0 12px 12px;
+}
+.public-edit-card {
+  grid-template-rows:auto;
+  min-height:0;
+  padding:12px;
+}
+.public-edit-card-body {
+  grid-template-rows:auto auto auto auto;
+}
+.public-edit-card-name {
+  font-size:14px;
+  line-height:1.3;
+  font-weight:900;
+  color:#25221f;
+}
+.public-edit-card-meta {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  min-height:0;
+}
+.public-edit-card-meta span {
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:5px 9px;
+  border:1px solid #e8e1d6;
+  border-radius:999px;
+  background:#faf8f4;
+  color:#5f574d;
+  font-size:12px;
+  font-weight:750;
+}
+.public-edit-card-editor {
+  margin-top:2px;
+}
+.public-edit-card-editor summary {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:34px;
+  cursor:pointer;
+  list-style:none;
+  border:1px solid #ddd7cf;
+  border-radius:8px;
+  background:#fff;
+  color:#5f574d;
+  font-size:12px;
+  font-weight:900;
+}
+.public-edit-card-editor > div {
+  padding-top:9px;
+}
+.public-edit-card-subpanel {
+  grid-column:1 / -1;
+  padding-top:2px;
+  border-top:1px solid #eee9e1;
+}
+.public-edit-card-subpanel summary {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  min-height:32px;
+  color:#5f574d;
+  font-size:12px;
+  font-weight:900;
+}
+.public-edit-card-subpanel summary::after {
+  content:'+';
+}
+.public-edit-card-subpanel[open] summary::after {
+  content:'-';
+}
+.public-edit-card-fields--advanced {
+  margin-top:8px;
+}
+.public-edit-create-advanced {
+  border-top:1px solid #eee9e1;
+  padding-top:6px;
+}
+.public-edit-create-advanced > summary {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  min-height:34px;
+  color:#5f574d;
+  font-size:12px;
+  font-weight:900;
+  list-style:none;
+  cursor:pointer;
+}
+.public-edit-create-advanced > summary::-webkit-details-marker {
+  display:none;
+}
+.public-edit-create-advanced > summary::after {
+  content:'+';
+}
+.public-edit-create-advanced[open] > summary::after {
+  content:'-';
+}
+.public-edit-grid.is-compact .public-edit-card {
+  min-height:0;
+}
+.public-edit-grid.is-compact .public-edit-card-editor:not([open]) {
+  margin-top:0;
+}
+@media(max-width:768px) {
+  .public-edit-head {
+    top:-14px;
+  }
+  .public-edit-section--sticky > .public-edit-section-summary {
+    top:46px;
+  }
+  .public-edit-selection-help {
+    top:92px;
+  }
+  .public-edit-section-summary::after {
+    right:2px;
+  }
+  .public-edit-card-fields,
+  .public-edit-card-fields--advanced,
+  .public-edit-create-grid {
+    grid-template-columns:1fr;
+  }
+  .public-edit-table-summary {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+}
