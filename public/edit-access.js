@@ -829,6 +829,14 @@ function selectRange(index, checked) {
   renderWorkspace();
 }
 
+function handleCardSelection(index, checked, useRange = false) {
+  if (useRange && state.selectionAnchor >= 0) {
+    selectRange(index, checked);
+    return;
+  }
+  toggleSelected(index, checked);
+}
+
 function selectVisible() {
   visibleIndexes().forEach(index => state.selected.add(index));
   const visible = visibleIndexes();
@@ -872,7 +880,7 @@ function renderWorkspace() {
   const draftSubmodelOptions = submodelOptionsFor(draft.type || 'PIE', draft.submodel || '');
   const draftName = pieceName({ type: draft.type || 'PIE', submodel: draft.submodel || '' });
   const visibleCards = visible.map(({ item, index }) => `
-    <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}">
+    <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}" data-card-index="${index}">
       <div class="public-edit-card-image">
         ${editorImageHtml(item)}
       </div>
@@ -1227,13 +1235,21 @@ function renderWorkspace() {
   workspace.querySelectorAll('[data-edit-colors-select]').forEach(select => select.addEventListener('change', () => syncEditEntry('colors')));
 
   workspace.querySelectorAll('[data-card-check]').forEach(input => {
-    input.addEventListener('change', event => {
+    input.addEventListener('click', event => {
+      event.preventDefault();
       const index = Number(input.dataset.cardCheck);
-      if (event.shiftKey && state.selectionAnchor >= 0) {
-        selectRange(index, input.checked);
-        return;
-      }
-      toggleSelected(index, input.checked);
+      const checked = !state.selected.has(index);
+      handleCardSelection(index, checked, event.shiftKey);
+    });
+  });
+
+  workspace.querySelectorAll('[data-card-index]').forEach(card => {
+    card.addEventListener('click', event => {
+      const interactive = event.target.closest('input, select, textarea, button, a, summary, label, details');
+      if (interactive) return;
+      const index = Number(card.dataset.cardIndex);
+      const checked = !state.selected.has(index);
+      handleCardSelection(index, checked, event.shiftKey);
     });
   });
 

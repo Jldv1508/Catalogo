@@ -2818,6 +2818,7 @@ body.blog main.blog-main {
   grid-template-rows:190px auto;
   min-height:0;
   padding:12px;
+  cursor:pointer;
 }
 .public-edit-card-image {
   height:190px;
@@ -2892,6 +2893,15 @@ body.blog main.blog-main {
   color:#5f574d;
   font-size:12px;
   font-weight:900;
+}
+.public-edit-card input,
+.public-edit-card select,
+.public-edit-card textarea,
+.public-edit-card summary,
+.public-edit-card button,
+.public-edit-card a,
+.public-edit-card label {
+  cursor:auto;
 }
 .public-edit-card-editor > div {
   padding-top:9px;
