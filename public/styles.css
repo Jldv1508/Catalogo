@@ -2814,9 +2814,23 @@ body.blog main.blog-main {
   padding:0 12px 12px;
 }
 .public-edit-card {
-  grid-template-rows:auto;
+  display:grid;
+  grid-template-rows:190px auto;
   min-height:0;
   padding:12px;
+}
+.public-edit-card-image {
+  height:190px;
+  border:1px solid #eee9e1;
+  border-radius:8px;
+  overflow:hidden;
+  background:#faf8f4;
+}
+.public-edit-card-image img {
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  display:block;
 }
 .public-edit-card-body {
   grid-template-rows:auto auto auto auto;
@@ -2931,9 +2945,13 @@ body.blog main.blog-main {
 }
 .public-edit-grid.is-compact .public-edit-card {
   min-height:0;
+  grid-template-rows:150px auto;
 }
 .public-edit-grid.is-compact .public-edit-card-editor:not([open]) {
   margin-top:0;
+}
+.public-edit-grid.is-compact .public-edit-card-image {
+  height:150px;
 }
 .public-edit-grid {
   grid-template-columns:repeat(auto-fill,minmax(280px,1fr));

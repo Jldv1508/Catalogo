@@ -176,6 +176,19 @@ function code(item) {
   return normalizeText(stored).includes(normalizeText(submodel)) ? stored : `${stored} · ${composed}`;
 }
 
+function pieceName(item) {
+  const parts = [typeName(item)];
+  if (itemSubmodel(item)) parts.push(submodelName(item));
+  return parts.filter(Boolean).join(' · ') || 'Pieza';
+}
+
+function syncPieceName(item) {
+  const name = pieceName(item);
+  item.productName = name;
+  item.nombre_comercial = name;
+  return name;
+}
+
 function typeName(item) {
   return tablesFor('types')[itemType(item)] || item.tipo_nombre || 'Tipo pendiente';
 }
@@ -267,8 +280,13 @@ function catalogImage(item) {
   return item.archivo || item.image || '';
 }
 
+function imageSrc(item) {
+  const image = catalogImage(item).replace(/^public\//, '').replace(/^\/+/, '');
+  return image ? `/${image}` : '';
+}
+
 function editorImageHtml(item) {
-  const image = catalogImage(item);
+  const image = imageSrc(item);
   if (!image) return '<span class="public-edit-card-image-empty">Sin imagen</span>';
   return `<img src="${escapeAttr(image)}" alt="${escapeAttr(code(item) || item.codigo || 'Pieza')}" style="${imageStyle(item)}">`;
 }
@@ -416,6 +434,7 @@ function loadEditorState() {
   if (payload) {
     state.items = (payload.items || []).map(baseItem);
     state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
+    state.items.forEach(syncPieceName);
   }
   syncAutoBackupState();
 }
@@ -434,6 +453,7 @@ async function ensureWorkspace() {
     const rows = Array.isArray(data) ? data : data?.items;
     if (Array.isArray(rows)) state.items = rows.map(baseItem);
     if (data && !Array.isArray(data)) state.tables = mergeTables(data.tables || state.tables || DEFAULT_TABLES);
+    state.items.forEach(syncPieceName);
   }
   state.loading = false;
   renderWorkspace();
@@ -446,7 +466,7 @@ function visibleIndexes() {
     .filter(({ item }) => {
       if (q) {
         const text = [
-          item.original, item.codigo, item.idf, code(item), item.productName, item.nombre_comercial,
+          item.original, item.codigo, item.idf, code(item), pieceName(item), item.productName, item.nombre_comercial,
           item.notes, item.descripcion, item.measures, item.medidas, item.type, item.submodel, item.material, item.color,
           typeName(item), submodelName(item), materialName(item), colorName(item),
         ].join(' ').toLowerCase();
@@ -528,6 +548,7 @@ function applyBulk() {
     }
     if (material) item.material = material;
     if (color) item.color = color;
+    syncPieceName(item);
   });
   savePublicPayload();
   renderWorkspace();
@@ -683,7 +704,7 @@ function createItemFromDraft() {
   const submodel = draft.submodel || '';
   const material = draft.material || '000';
   const color = draft.color || '000';
-  const nombre = String(draft.productName || '').trim();
+  const nombre = pieceName({ type, submodel });
   const descripcion = String(draft.descripcion || '').trim();
   const medidas = String(draft.medidas || '').trim();
   const referencia = normalizeCode(draft.referencia_csv) || codigo;
@@ -722,6 +743,7 @@ function createItemFromDraft() {
     item.descripcion = generatedDescription(item);
     item.description = item.descripcion;
   }
+  syncPieceName(item);
 
   state.items.unshift(item);
   state.selected.clear();
@@ -752,6 +774,7 @@ function importCatalogFile(file) {
       if (!Array.isArray(rows)) throw new Error('items');
       state.items = rows.map(baseItem);
       state.tables = mergeTables(payload.tables || state.tables || DEFAULT_TABLES);
+      state.items.forEach(syncPieceName);
       state.selected.clear();
       savePublicPayload();
       renderWorkspace();
@@ -829,20 +852,24 @@ function renderWorkspace() {
   const bulkColorOptions = '<option value="">Sin cambio</option>' + colorOptions;
   const draft = state.draft || createDraftItem();
   const draftSubmodelOptions = submodelOptionsFor(draft.type || 'PIE', draft.submodel || '');
+  const draftName = pieceName({ type: draft.type || 'PIE', submodel: draft.submodel || '' });
   const visibleCards = visible.map(({ item, index }) => `
     <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}">
+      <div class="public-edit-card-image">
+        ${editorImageHtml(item)}
+      </div>
       <div class="public-edit-card-body">
         <div class="public-edit-card-top">
           <label class="public-edit-check"><input type="checkbox" data-card-check="${index}" ${state.selected.has(index) ? 'checked' : ''}> Seleccionar</label>
           <strong>${escapeHtml(code(item))}</strong>
         </div>
-        <div class="public-edit-card-name">${escapeHtml(item.productName || item.nombre_comercial || 'Sin nombre visible')}</div>
+        <div class="public-edit-card-name">${escapeHtml(pieceName(item))}</div>
         <div class="public-edit-card-meta">
-          <span>${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''} · ${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</span>
+          <span>${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</span>
           <span>${catalogImage(item) ? 'Imagen lista' : 'Sin imagen'}</span>
         </div>
-        <details class="public-edit-card-editor" ${state.selected.has(index) && !state.compact ? 'open' : ''}>
-          <summary>${state.selected.has(index) ? 'Ocultar edición' : 'Abrir edición'}</summary>
+        <details class="public-edit-card-editor">
+          <summary>Abrir edición</summary>
           <div class="public-edit-card-fields">
             <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
             <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
@@ -852,18 +879,10 @@ function renderWorkspace() {
             <label>Precio<input data-item-field="price" data-index="${index}" value="${escapeAttr(item.price || item.precio_eur || '')}" inputmode="decimal" placeholder="0,00"></label>
             <label>Stock<input data-item-field="stock" data-index="${index}" value="${escapeAttr(item.stock || '')}" inputmode="numeric" placeholder="1"></label>
             <label>Estado<select data-item-field="estado" data-index="${index}">${statusOptionsHtml(item.estado || 'disponible')}</select></label>
-            <label class="full">Nombre<input data-item-field="productName" data-index="${index}" value="${escapeAttr(item.productName || item.nombre_comercial || '')}"></label>
+            <label class="full">Imagen<input data-item-field="archivo" data-index="${index}" value="${escapeAttr(catalogImage(item))}" placeholder="image-catalog/nombre.jpg"></label>
+            <label class="full">Nombre generado<input value="${escapeAttr(pieceName(item))}" readonly></label>
             <label class="full">Medidas<input data-item-field="medidas" data-index="${index}" value="${escapeAttr(item.medidas || item.measures || '')}"></label>
             <label class="full">Descripcion<textarea data-item-field="description" data-index="${index}">${escapeHtml(item.description || item.descripcion || '')}</textarea></label>
-            <details class="public-edit-card-subpanel">
-              <summary>Imagen y encuadre</summary>
-              <div class="public-edit-card-fields public-edit-card-fields--advanced">
-                <label class="full">Imagen<input data-item-field="archivo" data-index="${index}" value="${escapeAttr(catalogImage(item))}" placeholder="image-catalog/nombre.jpg"></label>
-                <label>Encuadre X<input data-item-field="image_x" data-index="${index}" value="${escapeAttr(item.image_x ?? 50)}" inputmode="decimal" placeholder="50"></label>
-                <label>Encuadre Y<input data-item-field="image_y" data-index="${index}" value="${escapeAttr(item.image_y ?? 50)}" inputmode="decimal" placeholder="50"></label>
-                <label>Zoom<input data-item-field="image_zoom" data-index="${index}" value="${escapeAttr(item.image_zoom ?? 1)}" inputmode="decimal" placeholder="1"></label>
-              </div>
-            </details>
           </div>
         </details>
       </div>
@@ -871,7 +890,7 @@ function renderWorkspace() {
   `).join('');
 
   workspace.innerHTML = `
-    <details class="public-edit-section public-edit-section--overview public-edit-section--collapsible public-edit-section--sticky" open>
+    <details class="public-edit-section public-edit-section--overview public-edit-section--collapsible public-edit-section--sticky">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
           <div>
@@ -894,7 +913,7 @@ function renderWorkspace() {
       </div>
     </details>
 
-    <details class="public-edit-section public-edit-section--collapsible" open>
+    <details class="public-edit-section public-edit-section--collapsible">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
           <div>
@@ -917,12 +936,12 @@ function renderWorkspace() {
       </div>
     </details>
 
-    <details class="public-edit-section public-edit-section--collapsible" open>
+    <details class="public-edit-section public-edit-section--collapsible">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
           <div>
             <strong>Nueva tarjeta</strong>
-            <span>Formulario simplificado con imagen en opciones avanzadas</span>
+            <span>Formulario con nombre generado por modelo y submodelo</span>
           </div>
         </div>
       </summary>
@@ -940,19 +959,11 @@ function renderWorkspace() {
           <label>Precio<input data-create-field="price" value="${escapeAttr(draft.price)}" inputmode="decimal" placeholder="0,00"></label>
           <label>Stock<input data-create-field="stock" value="${escapeAttr(draft.stock)}" inputmode="numeric" placeholder="1"></label>
           <label>Estado<select data-create-field="estado">${statusOptionsHtml(draft.estado || 'disponible')}</select></label>
-          <label class="full">Nombre visible<input data-create-field="productName" value="${escapeAttr(draft.productName)}" placeholder="Nombre comercial"></label>
+          <label class="full">Imagen<input data-create-field="archivo" value="${escapeAttr(draft.archivo)}" placeholder="image-catalog/mi-nueva-pieza.jpg"></label>
+          <label class="full">Nombre generado<input value="${escapeAttr(draftName)}" readonly></label>
           <label class="full">Medidas<input data-create-field="medidas" value="${escapeAttr(draft.medidas)}" placeholder="Opcional"></label>
           <label class="full">Descripcion<textarea data-create-field="descripcion" placeholder="Descripcion breve de la pieza">${escapeHtml(draft.descripcion)}</textarea></label>
         </div>
-        <details class="public-edit-card-subpanel public-edit-create-advanced">
-          <summary>Imagen y encuadre</summary>
-          <div class="public-edit-create-grid">
-            <label class="full">Ruta de imagen<input data-create-field="archivo" value="${escapeAttr(draft.archivo)}" placeholder="image-catalog/mi-nueva-pieza.jpg"></label>
-            <label>Encuadre X<input data-create-field="image_x" value="${escapeAttr(draft.image_x)}" inputmode="decimal" placeholder="50"></label>
-            <label>Encuadre Y<input data-create-field="image_y" value="${escapeAttr(draft.image_y)}" inputmode="decimal" placeholder="50"></label>
-            <label>Zoom<input data-create-field="image_zoom" value="${escapeAttr(draft.image_zoom)}" inputmode="decimal" placeholder="1"></label>
-          </div>
-        </details>
         <div class="public-edit-actions-row public-edit-actions-row--compact">
           <button type="button" data-create-item>Anadir tarjeta</button>
           <button type="button" data-reset-draft>Limpiar formulario</button>
@@ -971,7 +982,7 @@ function renderWorkspace() {
       </summary>
       <div class="public-edit-section-content">
         <div class="public-edit-tables public-edit-tables--creation">
-          <details class="public-edit-table-box" open>
+          <details class="public-edit-table-box">
             <summary class="public-edit-table-summary"><strong>Modelos</strong><span>Crear, editar y borrar</span></summary>
             <div class="public-edit-table-content">
               <label>Codigo<input data-new-types-code placeholder="Ej. PUL"></label>
@@ -1061,7 +1072,7 @@ function renderWorkspace() {
       </div>
     </details>
 
-    <details class="public-edit-section public-edit-section--collapsible public-edit-section--sticky" open>
+    <details class="public-edit-section public-edit-section--collapsible public-edit-section--sticky">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
           <div>
@@ -1093,7 +1104,7 @@ function renderWorkspace() {
       </div>
     </details>
 
-    <details class="public-edit-section public-edit-section--cards public-edit-section--collapsible" open>
+    <details class="public-edit-section public-edit-section--cards public-edit-section--collapsible">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
           <div>
@@ -1220,8 +1231,12 @@ function renderWorkspace() {
             item.submodel = '';
             item.submodelo = '';
           }
+          syncPieceName(item);
         }
-        if (field === 'submodel') item.submodelo = input.value;
+        if (field === 'submodel') {
+          item.submodelo = input.value;
+          syncPieceName(item);
+        }
         savePublicPayload();
         renderWorkspace();
       });
