@@ -2820,6 +2820,20 @@ body.blog main.blog-main {
 }
 .public-edit-card-body {
   grid-template-rows:auto auto auto auto;
+  align-content:start;
+  min-height:0;
+}
+.public-edit-card-top {
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+}
+.public-edit-card-top strong {
+  flex:1 1 auto;
+  max-width:none;
+  text-align:left;
+  overflow-wrap:anywhere;
+  white-space:normal;
 }
 .public-edit-card-name {
   font-size:14px;
@@ -2846,7 +2860,10 @@ body.blog main.blog-main {
   font-weight:750;
 }
 .public-edit-card-editor {
+  align-self:auto;
   margin-top:2px;
+  border-top:0;
+  padding-top:0;
 }
 .public-edit-card-editor summary {
   display:flex;
@@ -2917,6 +2934,14 @@ body.blog main.blog-main {
 }
 .public-edit-grid.is-compact .public-edit-card-editor:not([open]) {
   margin-top:0;
+}
+.public-edit-grid {
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  grid-auto-rows:auto;
+  gap:12px;
+}
+.public-edit-grid.is-compact {
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
 }
 @media(max-width:768px) {
   .public-edit-head {
