@@ -21,6 +21,7 @@ let state = {
   items: [],
   tables: cloneTables(DEFAULT_TABLES),
   selected: new Set(),
+  selectionAnchor: -1,
   compact: false,
   filters: { q: '', type: [], submodel: [], material: [], color: [], priceMin: '', priceMax: '' },
   draft: createDraftItem(),
@@ -90,16 +91,14 @@ function normalizeText(value) {
     .trim();
 }
 
-function getConfig() {
-  return fetch('/api/edit-credentials', { cache: 'no-store' })
-    .then(response => {
-      if (!response.ok) throw new Error(`edit-credentials:${response.status}`);
-      return response.json();
-    })
-    .then(payload => ({
-      user: String(payload?.user || ''),
-      password: String(payload?.password || ''),
-    }));
+async function getConfig() {
+  const response = await fetch('/api/edit-credentials', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`edit-credentials:${response.status}`);
+  const payload = await response.json();
+  return {
+    user: String(payload?.user || ''),
+    password: String(payload?.password || ''),
+  };
 }
 
 function getPanel() {
@@ -410,6 +409,7 @@ function restoreLatestAutoBackup() {
     priceMax: String(payload.filters?.priceMax || ''),
   };
   state.selected.clear();
+  state.selectionAnchor = -1;
   state.lastAutoBackupAt = backup.savedAt || '';
   lastAutoBackupSignature = backup.signature || currentSnapshotSignature();
   savePublicPayload();
@@ -748,6 +748,7 @@ function createItemFromDraft() {
   state.items.unshift(item);
   state.selected.clear();
   state.selected.add(0);
+  state.selectionAnchor = 0;
   state.filters = { q: codigo, type: [], submodel: [], material: [], color: [], priceMin: '', priceMax: '' };
   state.draft = createDraftItem();
   savePublicPayload();
@@ -776,6 +777,7 @@ function importCatalogFile(file) {
       state.tables = mergeTables(payload.tables || state.tables || DEFAULT_TABLES);
       state.items.forEach(syncPieceName);
       state.selected.clear();
+      state.selectionAnchor = -1;
       savePublicPayload();
       renderWorkspace();
       const stateEl = document.querySelector('[data-edit-state]');
@@ -809,13 +811,28 @@ function modelChipsHtml() {
 }
 
 function toggleSelected(index, checked) {
+  state.selectionAnchor = index;
   if (checked) state.selected.add(index);
   else state.selected.delete(index);
   renderWorkspace();
 }
 
+function selectRange(index, checked) {
+  const anchor = Number.isInteger(state.selectionAnchor) && state.selectionAnchor >= 0 ? state.selectionAnchor : index;
+  const start = Math.min(anchor, index);
+  const end = Math.max(anchor, index);
+  for (let current = start; current <= end; current += 1) {
+    if (checked) state.selected.add(current);
+    else state.selected.delete(current);
+  }
+  state.selectionAnchor = index;
+  renderWorkspace();
+}
+
 function selectVisible() {
   visibleIndexes().forEach(index => state.selected.add(index));
+  const visible = visibleIndexes();
+  state.selectionAnchor = visible.length ? visible[visible.length - 1] : state.selectionAnchor;
   renderWorkspace();
 }
 
@@ -829,6 +846,7 @@ function invertVisible() {
 
 function clearSelection() {
   state.selected.clear();
+  state.selectionAnchor = -1;
   renderWorkspace();
 }
 
@@ -1209,7 +1227,14 @@ function renderWorkspace() {
   workspace.querySelectorAll('[data-edit-colors-select]').forEach(select => select.addEventListener('change', () => syncEditEntry('colors')));
 
   workspace.querySelectorAll('[data-card-check]').forEach(input => {
-    input.addEventListener('change', () => toggleSelected(Number(input.dataset.cardCheck), input.checked));
+    input.addEventListener('change', event => {
+      const index = Number(input.dataset.cardCheck);
+      if (event.shiftKey && state.selectionAnchor >= 0) {
+        selectRange(index, input.checked);
+        return;
+      }
+      toggleSelected(index, input.checked);
+    });
   });
 
   workspace.querySelectorAll('[data-item-field]').forEach(input => {
