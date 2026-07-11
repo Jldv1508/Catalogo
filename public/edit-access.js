@@ -869,7 +869,7 @@ function renderWorkspace() {
           <span>${catalogImage(item) ? 'Imagen lista' : 'Sin imagen'}</span>
         </div>
         <details class="public-edit-card-editor">
-          <summary>Abrir edición</summary>
+          <summary>Abrir edición de la pieza</summary>
           <div class="public-edit-card-fields">
             <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
             <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
@@ -1104,21 +1104,19 @@ function renderWorkspace() {
       </div>
     </details>
 
-    <details class="public-edit-section public-edit-section--cards public-edit-section--collapsible">
-      <summary class="public-edit-section-summary">
-        <div class="public-edit-section-head">
-          <div>
-            <strong>Tarjetas</strong>
-            <span>Vista clara con edición desplegable por pieza</span>
-          </div>
+    <section class="public-edit-section public-edit-section--cards">
+      <div class="public-edit-section-head">
+        <div>
+          <strong>Tarjetas</strong>
+          <span>Vista clara con edición desplegable por pieza</span>
         </div>
-      </summary>
+      </div>
       <div class="public-edit-section-content">
         <div class="public-edit-grid${state.compact ? ' is-compact' : ''}">
           ${visibleCards || '<div class="public-edit-empty">No hay piezas visibles.</div>'}
         </div>
       </div>
-    </details>
+    </section>
   `;
 
   workspace.querySelector('[data-filter-q]').value = state.filters.q;
