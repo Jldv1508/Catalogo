@@ -31,6 +31,7 @@ let state = {
 };
 let autoBackupTimer = null;
 let lastAutoBackupSignature = '';
+let openCardEditors = new Set();
 
 function createDraftItem() {
   return {
@@ -410,6 +411,7 @@ function restoreLatestAutoBackup() {
   const payload = backup?.payload;
   if (!Array.isArray(payload?.items)) return false;
   state.items = payload.items.map(baseItem);
+  openCardEditors.clear();
   state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
   state.filters = {
     q: String(payload.filters?.q || ''),
@@ -518,10 +520,13 @@ function toggleMultiFilter(key, value, checked) {
 
 function checkboxFilterHtml(key, title, kind) {
   const selected = new Set(state.filters[key] || []);
-  const entries = Object.entries(tablesFor(kind));
+  const entries = sortedEntries(kind);
   const choices = entries.map(([codeValue, value]) => {
     const label = typeof value === 'string' ? value : value?.label || codeValue;
-    const prefix = kind === 'submodels' && value?.model ? `${tablesFor('types')[value.model] || value.model} / ` : '';
+    const models = kind === 'submodels' ? submodelModels(codeValue) : [];
+    const prefix = kind === 'submodels' && models.length
+      ? `${models.map(model => tablesFor('types')[model] || model).join(', ')} / `
+      : '';
     return `
       <label class="public-edit-check-option">
         <input type="checkbox" data-filter-multi="${key}" data-filter-value="${escapeAttr(codeValue)}" ${selected.has(codeValue) ? 'checked' : ''}>
@@ -572,25 +577,42 @@ function tableValue(kind, codeValue) {
   return value?.label || '';
 }
 
-function submodelParent(codeValue) {
+function sortedEntries(kind) {
+  return Object.entries(tablesFor(kind)).sort((a, b) => {
+    const leftLabel = typeof a[1] === 'string' ? a[1] : a[1]?.label || a[0];
+    const rightLabel = typeof b[1] === 'string' ? b[1] : b[1]?.label || b[0];
+    return leftLabel.localeCompare(rightLabel, 'es', { sensitivity: 'base', numeric: true });
+  });
+}
+
+function submodelModels(codeValue) {
   const value = tablesFor('submodels')[codeValue];
-  return typeof value === 'object' && value ? value.model || '' : '';
+  if (!value || typeof value === 'string') return [];
+  if (Array.isArray(value.models)) return value.models.filter(Boolean);
+  return value.model ? [value.model] : [];
+}
+
+function submodelParent(codeValue) {
+  return submodelModels(codeValue)[0] || '';
 }
 
 function optionHtml(kind, includeBlank = false) {
-  const entries = Object.entries(tablesFor(kind));
+  const entries = sortedEntries(kind);
   const options = entries.map(([codeValue, value]) => {
     const label = typeof value === 'string' ? value : value?.label || codeValue;
-    const prefix = kind === 'submodels' && value?.model ? `${tablesFor('types')[value.model] || value.model} / ` : '';
+    const models = kind === 'submodels' ? submodelModels(codeValue) : [];
+    const prefix = kind === 'submodels' && models.length
+      ? `${models.map(model => tablesFor('types')[model] || model).join(', ')} / `
+      : '';
     return `<option value="${escapeAttr(codeValue)}">${escapeHtml(codeValue)} · ${escapeHtml(prefix)}${escapeHtml(label)}</option>`;
   }).join('');
   return includeBlank ? `<option value="">Sin cambio</option>${options}` : options;
 }
 
 function submodelOptionsFor(modelCode, current = '') {
-  const entries = Object.entries(tablesFor('submodels')).filter(([, value]) => {
-    const parent = typeof value === 'object' && value ? value.model || '' : '';
-    return !parent || !modelCode || parent === modelCode;
+  const entries = sortedEntries('submodels').filter(([codeValue]) => {
+    const parents = submodelModels(codeValue);
+    return !parents.length || !modelCode || parents.includes(modelCode);
   });
   const options = entries.map(([codeValue, value]) => {
     const label = typeof value === 'string' ? value : value?.label || codeValue;
@@ -606,9 +628,8 @@ function addTableEntry(kind) {
   const labelValue = String(labelInput?.value || '').trim();
   if (!codeValue || !labelValue) return;
   if (kind === 'submodels') {
-    const modelValue = document.querySelector('[data-new-submodels-model]')?.value || '';
-    if (!modelValue) return;
-    state.tables.submodels[codeValue] = { model: modelValue, label: labelValue };
+    const modelValues = [...document.querySelectorAll('[data-new-submodels-model]:checked')].map(input => input.value).filter(Boolean);
+    state.tables.submodels[codeValue] = modelValues.length ? { models: modelValues, label: labelValue } : { label: labelValue };
   } else {
     state.tables[kind][codeValue] = labelValue;
   }
@@ -626,9 +647,8 @@ function editTableEntry(kind) {
   const labelValue = String(labelInput?.value || '').trim();
   if (!labelValue) return;
   if (kind === 'submodels') {
-    const modelValue = document.querySelector('[data-edit-submodels-model]')?.value || '';
-    if (!modelValue) return;
-    state.tables.submodels[codeValue] = { model: modelValue, label: labelValue };
+    const modelValues = [...document.querySelectorAll('[data-edit-submodels-model]:checked')].map(input => input.value).filter(Boolean);
+    state.tables.submodels[codeValue] = modelValues.length ? { models: modelValues, label: labelValue } : { label: labelValue };
   } else {
     state.tables[kind][codeValue] = labelValue;
   }
@@ -640,9 +660,14 @@ function syncEditEntry(kind) {
   const select = document.querySelector(`[data-edit-${kind}-select]`);
   const codeValue = select?.value || '';
   const labelInput = document.querySelector(`[data-edit-${kind}-label]`);
-  const modelSelect = document.querySelector(`[data-edit-${kind}-model]`);
+  const modelInputs = document.querySelectorAll(`[data-edit-${kind}-model]`);
   if (labelInput) labelInput.value = tableValue(kind, codeValue);
-  if (modelSelect) modelSelect.value = submodelParent(codeValue);
+  if (modelInputs.length) {
+    const models = new Set(submodelModels(codeValue));
+    modelInputs.forEach(input => {
+      input.checked = models.has(input.value);
+    });
+  }
 }
 
 function deleteTableEntry(kind) {
@@ -668,6 +693,7 @@ function restorePublicCatalog() {
   const payload = loadPublicPayload();
   if (!payload?.items) return false;
   state.items = payload.items.map(baseItem);
+  openCardEditors.clear();
   state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
   state.selected.clear();
   if (typeof window !== 'undefined') {
@@ -758,6 +784,7 @@ function createItemFromDraft() {
   syncPieceName(item);
 
   state.items.unshift(item);
+  openCardEditors.clear();
   state.selected.clear();
   state.selected.add(0);
   state.selectionAnchor = 0;
@@ -786,6 +813,7 @@ function importCatalogFile(file) {
       const rows = Array.isArray(payload) ? payload : payload.items;
       if (!Array.isArray(rows)) throw new Error('items');
       state.items = rows.map(baseItem);
+      openCardEditors.clear();
       state.tables = mergeTables(payload.tables || state.tables || DEFAULT_TABLES);
       state.filters = {
         q: String(payload.filters?.q || ''),
@@ -900,6 +928,12 @@ function renderWorkspace() {
   const draft = state.draft || createDraftItem();
   const draftSubmodelOptions = submodelOptionsFor(draft.type || 'PIE', draft.submodel || '');
   const draftName = pieceName({ type: draft.type || 'PIE', submodel: draft.submodel || '' });
+  const modelChecklistHtml = (fieldName, selected = []) => sortedEntries('types').map(([codeValue, label]) => `
+    <label class="public-edit-check-option">
+      <input type="checkbox" ${fieldName} value="${escapeAttr(codeValue)}" ${selected.includes(codeValue) ? 'checked' : ''}>
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `).join('');
   const visibleCards = visible.map(({ item, index }) => `
     <article class="public-edit-card${state.selected.has(index) ? ' is-selected' : ''}" data-card-index="${index}">
       <div class="public-edit-card-image">
@@ -915,7 +949,7 @@ function renderWorkspace() {
           <span>${escapeHtml(materialName(item))} · ${escapeHtml(colorName(item))}</span>
           <span>${catalogImage(item) ? 'Imagen lista' : 'Sin imagen'}</span>
         </div>
-        <details class="public-edit-card-editor">
+        <details class="public-edit-card-editor" data-card-editor="${index}" ${openCardEditors.has(index) ? 'open' : ''}>
           <summary>Abrir edición de la pieza</summary>
           <div class="public-edit-card-fields">
             <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
@@ -1053,7 +1087,10 @@ function renderWorkspace() {
           <details class="public-edit-table-box public-edit-table-box--models">
             <summary class="public-edit-table-summary"><strong>Submodelos</strong><span>Dependen del modelo</span></summary>
             <div class="public-edit-table-content">
-              <label>Modelo padre<select data-new-submodels-model>${typeOptions}</select></label>
+              <fieldset class="public-edit-filter-group">
+                <legend>Modelos vinculados</legend>
+                ${modelChecklistHtml('data-new-submodels-model')}
+              </fieldset>
               <label>Codigo<input data-new-submodels-code placeholder="Ej. PUL-001"></label>
               <label>Nombre<input data-new-submodels-label placeholder="Nombre del submodelo"></label>
               <div class="public-edit-inline-actions public-edit-inline-actions--single">
@@ -1061,7 +1098,10 @@ function renderWorkspace() {
               </div>
               <div class="public-edit-divider"></div>
               <label>Submodelo a editar<select data-edit-submodels-select><option value="">Elegir</option>${submodelOptions}</select></label>
-              <label>Modelo padre<select data-edit-submodels-model>${typeOptions}</select></label>
+              <fieldset class="public-edit-filter-group">
+                <legend>Modelos vinculados</legend>
+                ${modelChecklistHtml('data-edit-submodels-model', submodelModels(document.querySelector('[data-edit-submodels-select]')?.value || ''))}
+              </fieldset>
               <label>Nuevo nombre<input data-edit-submodels-label placeholder="Nombre actualizado"></label>
               <div class="public-edit-inline-actions public-edit-inline-actions--single">
                 <button type="button" data-edit-submodels>Guardar cambios</button>
@@ -1274,6 +1314,14 @@ function renderWorkspace() {
     });
   });
 
+  workspace.querySelectorAll('[data-card-editor]').forEach(details => {
+    details.addEventListener('toggle', () => {
+      const index = Number(details.dataset.cardEditor);
+      if (details.open) openCardEditors.add(index);
+      else openCardEditors.delete(index);
+    });
+  });
+
   workspace.querySelectorAll('[data-item-field]').forEach(input => {
     const index = Number(input.dataset.index);
     const field = input.dataset.itemField;
@@ -1287,7 +1335,8 @@ function renderWorkspace() {
         if (field === 'type') {
           item.type = input.value;
           item.tipo = input.value;
-          if (item.submodel && submodelParent(item.submodel) && submodelParent(item.submodel) !== input.value) {
+          const parents = submodelModels(item.submodel);
+          if (item.submodel && parents.length && !parents.includes(input.value)) {
             item.submodel = '';
             item.submodelo = '';
           }
