@@ -265,6 +265,12 @@ function normalizeImagePath(value) {
   return String(value || '').trim().replace(/^\/+/, '');
 }
 
+function normalizeTableCode(value, size = 3) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return /^\d+$/.test(raw) ? raw.padStart(size, '0') : raw;
+}
+
 function imageStyle(item) {
   const x = Number(item.image_x ?? item.imageX ?? 50);
   const y = Number(item.image_y ?? item.imageY ?? 50);
@@ -291,14 +297,20 @@ function editorImageHtml(item) {
 }
 
 function baseItem(item) {
+  const material = normalizeTableCode(item.material, 3) || '000';
+  const color = normalizeTableCode(item.color, 3) || '000';
+  const submodel = normalizeTableCode(item.submodel || item.submodelo, 3);
+  const unit = normalizeTableCode(item.unit, 3) || '001';
   return {
     ...item,
     type: item.type || item.tipo || 'PIE',
-    submodel: item.submodel || item.submodelo || '',
-    material: item.material || '000',
-    color: item.color || '000',
-    unit: String(item.unit || '001').padStart(3, '0'),
+    submodel,
+    submodelo: submodel,
+    material,
+    color,
+    unit,
     price: normalizePrice(item.price ?? item.precio_eur),
+    precio_eur: normalizePrice(item.price ?? item.precio_eur),
     stock: normalizeStock(item.stock),
     image_x: Number.isFinite(Number(item.image_x ?? item.imageX)) ? Number(item.image_x ?? item.imageX) : 50,
     image_y: Number.isFinite(Number(item.image_y ?? item.imageY)) ? Number(item.image_y ?? item.imageY) : 50,
@@ -775,6 +787,15 @@ function importCatalogFile(file) {
       if (!Array.isArray(rows)) throw new Error('items');
       state.items = rows.map(baseItem);
       state.tables = mergeTables(payload.tables || state.tables || DEFAULT_TABLES);
+      state.filters = {
+        q: String(payload.filters?.q || ''),
+        type: Array.isArray(payload.filters?.type) ? payload.filters.type.map(value => normalizeTableCode(value, 3) || String(value || '')) : [],
+        submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel.map(value => normalizeTableCode(value, 3) || String(value || '')) : [],
+        material: Array.isArray(payload.filters?.material) ? payload.filters.material.map(value => normalizeTableCode(value, 3) || String(value || '')) : [],
+        color: Array.isArray(payload.filters?.color) ? payload.filters.color.map(value => normalizeTableCode(value, 3) || String(value || '')) : [],
+        priceMin: String(payload.filters?.priceMin || ''),
+        priceMax: String(payload.filters?.priceMax || ''),
+      };
       state.items.forEach(syncPieceName);
       state.selected.clear();
       state.selectionAnchor = -1;
