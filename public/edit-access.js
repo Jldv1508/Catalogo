@@ -916,6 +916,7 @@ function renderWorkspace() {
   `).join('');
 
   workspace.innerHTML = `
+    <div class="public-edit-sticky-header">
     <details class="public-edit-section public-edit-section--overview public-edit-section--collapsible public-edit-section--sticky">
       <summary class="public-edit-section-summary">
         <div class="public-edit-section-head">
@@ -1129,6 +1130,7 @@ function renderWorkspace() {
         </div>
       </div>
     </details>
+    </div>
 
     <section class="public-edit-section public-edit-section--cards">
       <div class="public-edit-section-head">

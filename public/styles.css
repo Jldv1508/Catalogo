@@ -2726,6 +2726,25 @@ body.blog main.blog-main {
   z-index:24;
   background:#fbfaf7;
 }
+.public-edit-note {
+  position:sticky;
+  top:72px;
+  z-index:23;
+  background:#fbfaf7;
+}
+.public-edit-sticky-header {
+  position:sticky;
+  top:114px;
+  z-index:22;
+  display:grid;
+  gap:10px;
+  padding-bottom:8px;
+  background:#fbfaf7;
+}
+.public-edit-sticky-header .public-edit-section--sticky > .public-edit-section-summary,
+.public-edit-sticky-header .public-edit-selection-help {
+  position:static;
+}
 .public-edit-section--collapsible {
   overflow:visible;
 }
@@ -2974,6 +2993,12 @@ body.blog main.blog-main {
 @media(max-width:768px) {
   .public-edit-head {
     top:-14px;
+  }
+  .public-edit-note {
+    top:58px;
+  }
+  .public-edit-sticky-header {
+    top:98px;
   }
   .public-edit-section--sticky > .public-edit-section-summary {
     top:46px;
