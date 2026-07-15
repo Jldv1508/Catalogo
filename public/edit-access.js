@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'jldv1508EditUnlocked';
 const PUBLIC_STORE_FALLBACK = `${STORAGE_KEY}:public-store`;
+const SERVER_STATE_URL = '/api/catalogo-edicion';
 const AUTO_BACKUP_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_BACKUP_LIMIT = 12;
 const STATUS_OPTIONS = {
@@ -32,6 +33,10 @@ let state = {
 let autoBackupTimer = null;
 let lastAutoBackupSignature = '';
 let openCardEditors = new Set();
+let serverSaveTimer = null;
+let serverSavePromise = null;
+let lastServerSavedAt = '';
+let lastServerSaveError = '';
 
 function createDraftItem() {
   return {
@@ -330,19 +335,107 @@ function loadPublicPayload() {
   return null;
 }
 
-function savePublicPayload() {
-  if (!state.publicKey) return false;
-  const updatedAt = new Date().toISOString();
-  localStorage.setItem(state.publicKey, JSON.stringify({
+function currentEditorPayload() {
+  return {
     items: state.items,
     tables: state.tables,
-    updatedAt,
-  }));
+    filters: state.filters,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function payloadTimestamp(payload) {
+  const time = Date.parse(String(payload?.updatedAt || payload?.exportedAt || payload?.savedAt || ''));
+  return Number.isFinite(time) ? time : 0;
+}
+
+async function loadServerPayload() {
+  try {
+    const response = await fetch(SERVER_STATE_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return Array.isArray(payload?.items) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistServerPayload(reason = 'change', immediate = false) {
+  const payload = { ...currentEditorPayload(), reason };
+  try {
+    const response = await fetch(SERVER_STATE_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+      keepalive: immediate,
+    });
+    if (!response.ok) throw new Error(`server-save:${response.status}`);
+    const saved = await response.json().catch(() => ({}));
+    lastServerSavedAt = String(saved?.updatedAt || payload.updatedAt || '');
+    lastServerSaveError = '';
+    renderAutoBackupStatus();
+    return true;
+  } catch {
+    lastServerSaveError = 'No se pudo guardar en disco. El respaldo local sigue activo.';
+    renderAutoBackupStatus();
+    return false;
+  }
+}
+
+function queueServerSave(reason = 'change', immediate = false) {
+  if (typeof window === 'undefined') return null;
+  if (serverSaveTimer) {
+    window.clearTimeout(serverSaveTimer);
+    serverSaveTimer = null;
+  }
+  const run = () => {
+    serverSavePromise = persistServerPayload(reason, immediate).finally(() => {
+      serverSavePromise = null;
+    });
+    return serverSavePromise;
+  };
+  if (immediate) return run();
+  serverSaveTimer = window.setTimeout(run, 900);
+  return null;
+}
+
+async function restoreServerSnapshot() {
+  const payload = await loadServerPayload();
+  if (!Array.isArray(payload?.items)) return false;
+  state.items = payload.items.map(baseItem);
+  state.items.forEach(syncPieceName);
+  openCardEditors.clear();
+  state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
+  state.filters = {
+    q: String(payload.filters?.q || ''),
+    type: Array.isArray(payload.filters?.type) ? payload.filters.type : [],
+    submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel : [],
+    material: Array.isArray(payload.filters?.material) ? payload.filters.material : [],
+    color: Array.isArray(payload.filters?.color) ? payload.filters.color : [],
+    priceMin: String(payload.filters?.priceMin || ''),
+    priceMax: String(payload.filters?.priceMax || ''),
+  };
+  state.selected.clear();
+  state.selectionAnchor = -1;
+  lastServerSavedAt = String(payload.updatedAt || '');
+  lastServerSaveError = '';
+  savePublicPayload({ skipServer: true });
+  renderWorkspace();
+  return true;
+}
+
+function savePublicPayload(options = {}) {
+  const { skipServer = false, reason = 'change' } = options;
+  if (!state.publicKey) return false;
+  const payload = currentEditorPayload();
+  localStorage.setItem(state.publicKey, JSON.stringify(payload));
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('jldv1508-public-updated', {
-      detail: { key: state.publicKey, updatedAt },
+      detail: { key: state.publicKey, updatedAt: payload.updatedAt },
     }));
   }
+  if (!skipServer) queueServerSave(reason);
   return true;
 }
 
@@ -373,12 +466,15 @@ function renderAutoBackupStatus() {
   const status = document.querySelector('[data-auto-backup-status]');
   if (!status) return;
   const backups = readAutoBackups();
-  if (!backups.length) {
-    status.textContent = 'Autorespaldo local cada 5 min. Aún no hay respaldos automáticos.';
-    return;
-  }
-  const latest = backups[0]?.savedAt ? new Date(backups[0].savedAt).toLocaleString('es-ES') : 'sin fecha';
-  status.textContent = `Autorespaldo local cada 5 min. Último: ${latest}. Historial: ${backups.length}.`;
+  const localText = backups.length
+    ? `Autorespaldo local cada 5 min. Último: ${backups[0]?.savedAt ? new Date(backups[0].savedAt).toLocaleString('es-ES') : 'sin fecha'}. Historial: ${backups.length}.`
+    : 'Autorespaldo local cada 5 min. Aún no hay respaldos automáticos.';
+  const serverText = lastServerSaveError
+    ? lastServerSaveError
+    : lastServerSavedAt
+      ? `Guardado en disco: ${new Date(lastServerSavedAt).toLocaleString('es-ES')}.`
+      : 'Guardado en disco pendiente.';
+  status.textContent = `${localText} ${serverText}`;
 }
 
 function saveAutomaticBackup(reason = 'interval') {
@@ -426,7 +522,7 @@ function restoreLatestAutoBackup() {
   state.selectionAnchor = -1;
   state.lastAutoBackupAt = backup.savedAt || '';
   lastAutoBackupSignature = backup.signature || currentSnapshotSignature();
-  savePublicPayload();
+  savePublicPayload({ reason: 'restore-local-backup' });
   renderWorkspace();
   return true;
 }
@@ -439,16 +535,34 @@ function startAutoBackupTimer() {
     saveAutomaticBackup('interval');
   }, AUTO_BACKUP_INTERVAL_MS);
   window.addEventListener('pagehide', () => {
-    if (state.unlocked) saveAutomaticBackup('pagehide');
+    if (!state.unlocked) return;
+    saveAutomaticBackup('pagehide');
+    queueServerSave('pagehide', true);
   });
 }
 
-function loadEditorState() {
-  const payload = loadPublicPayload();
+async function loadEditorState() {
+  const localPayload = loadPublicPayload();
+  const serverPayload = await loadServerPayload();
+  const payload = payloadTimestamp(serverPayload) >= payloadTimestamp(localPayload) ? (serverPayload || localPayload) : (localPayload || serverPayload);
   if (payload) {
     state.items = (payload.items || []).map(baseItem);
     state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
+    state.filters = {
+      q: String(payload.filters?.q || ''),
+      type: Array.isArray(payload.filters?.type) ? payload.filters.type : [],
+      submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel : [],
+      material: Array.isArray(payload.filters?.material) ? payload.filters.material : [],
+      color: Array.isArray(payload.filters?.color) ? payload.filters.color : [],
+      priceMin: String(payload.filters?.priceMin || ''),
+      priceMax: String(payload.filters?.priceMax || ''),
+    };
     state.items.forEach(syncPieceName);
+  }
+  lastServerSavedAt = String(serverPayload?.updatedAt || '');
+  lastServerSaveError = '';
+  if (localPayload && payloadTimestamp(localPayload) > payloadTimestamp(serverPayload)) {
+    queueServerSave('sync-local-to-disk', true);
   }
   syncAutoBackupState();
 }
@@ -459,7 +573,7 @@ async function ensureWorkspace() {
   state.publicKey = currentPublicKey();
   state.catalogUrl = currentCatalogUrl();
   if (!state.items.length) {
-    loadEditorState();
+    await loadEditorState();
   }
   if (!state.items.length && state.catalogUrl) {
     const response = await fetch(state.catalogUrl, { cache: 'no-store' });
@@ -1010,6 +1124,7 @@ function renderWorkspace() {
           <button type="button" data-download-csv>Exportar CSV visible</button>
           <button type="button" data-download-json>Exportar catálogo público</button>
           <button type="button" data-download-backup>Exportar respaldo completo</button>
+          <button type="button" data-restore-server>Restaurar guardado en disco</button>
           <button type="button" data-restore-public>Restaurar guardado local</button>
           <button type="button" data-restore-auto-backup>Restaurar último autorespaldo</button>
         </div>
@@ -1269,6 +1384,11 @@ function renderWorkspace() {
       exportedAt: new Date().toISOString(),
     }, null, 2), 'application/json;charset=utf-8');
   });
+  workspace.querySelector('[data-restore-server]').addEventListener('click', async () => {
+    if (!await restoreServerSnapshot()) {
+      alert('No se encontró un guardado en disco para restaurar.');
+    }
+  });
   workspace.querySelector('[data-restore-public]').addEventListener('click', () => {
     restorePublicCatalog();
   });
@@ -1369,6 +1489,7 @@ function renderWorkspace() {
           item[field] = input.value;
           item.nombre_comercial = input.value;
         } else item[field] = input.value;
+        savePublicPayload({ reason: 'typing' });
       });
       input.addEventListener('change', () => {
         if (field === 'price') {
@@ -1400,6 +1521,11 @@ function renderWorkspace() {
         renderWorkspace();
       });
     } else if (input.tagName === 'TEXTAREA') {
+      input.addEventListener('input', () => {
+        item[field] = input.value;
+        if (field === 'description') item.descripcion = input.value;
+        savePublicPayload({ reason: 'typing' });
+      });
       input.addEventListener('change', () => {
         item[field] = input.value;
         if (field === 'description') item.descripcion = input.value;
