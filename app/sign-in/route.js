@@ -1,14 +1,14 @@
 import { verifySessionToken, SESSION_COOKIE } from '../../lib/access-session.js';
 
 function sanitizeNextPath(value) {
-  const nextPath = String(value || '/').trim();
+  const nextPath = String(value || '/area-cliente').trim();
   if (!nextPath.startsWith('/') || nextPath.startsWith('//')) {
-    return '/';
+    return '/area-cliente';
   }
   return nextPath;
 }
 
-function html(nextPath = '/') {
+function html(nextPath = '/area-cliente') {
   const safeNext = sanitizeNextPath(nextPath).replace(/"/g, '&quot;');
   return `<!doctype html>
 <html lang="es">
@@ -98,7 +98,7 @@ function html(nextPath = '/') {
 
 export async function GET(request) {
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  const nextPath = sanitizeNextPath(new URL(request.url).searchParams.get('next') || '/');
+  const nextPath = sanitizeNextPath(new URL(request.url).searchParams.get('next') || '/area-cliente');
   if (session?.email) {
     return Response.redirect(new URL(nextPath, request.url), 302);
   }

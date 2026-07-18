@@ -793,6 +793,18 @@ button:hover, select:hover, input:focus { border-color:var(--gold); outline:none
   flex-wrap:wrap;
   gap:8px;
 }
+.filter-select-wrap {
+  display:grid;
+}
+.filter-select {
+  width:100%;
+  min-height:40px;
+  border:1px solid #ddd7cf;
+  border-radius:12px;
+  background:#fff;
+  font-size:14px;
+  font-weight:750;
+}
 .price-filter-note {
   color:var(--muted);
   font-size:12px;
@@ -1231,6 +1243,9 @@ body:not(.home) main:not(.choice-screen) { display:grid; grid-template-columns:r
   display:none !important;
   align-items:center;
   gap:10px;
+}
+body.catalog-page .brand-actions {
+  display:flex !important;
 }
 .blog-main {
   display:grid;

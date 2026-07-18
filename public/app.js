@@ -107,6 +107,10 @@ function selectionCount(group) {
   return activeSelection(group).size;
 }
 
+function firstSelectionValue(group) {
+  return [...activeSelection(group)][0] || '';
+}
+
 function groupLabel(group, key) {
   if (group === 'type') return activeTables.types[key] || key || 'Tipo';
   if (group === 'submodel') {
@@ -279,10 +283,13 @@ function renderFilterGroup(group, options) {
   const selected = activeSelection(group);
   const merged = mergeSelectedOptions(group, options);
   config.container.innerHTML = merged.length
-    ? merged.map(([key, option]) => `<button type="button" class="filter-chip filter-chip--toggle${selected.has(key) ? ' is-active' : ''}" data-toggle-filter="${escapeAttr(group)}" data-filter-value="${escapeAttr(key)}">${escapeHtml(option.label)}<span>${option.count}</span></button>`).join('')
+    ? `<select class="filter-select" data-select-filter="${escapeAttr(group)}" aria-label="${escapeAttr(config.param)}">
+        <option value="">${escapeHtml(config.allLabel)}</option>
+        ${merged.map(([key, option]) => `<option value="${escapeAttr(key)}"${selected.has(key) ? ' selected' : ''}>${escapeHtml(option.label)} (${option.count})</option>`).join('')}
+      </select>`
     : '<span class="filter-chip-empty">Sin opciones</span>';
   if (config.meta) {
-    config.meta.textContent = selected.size ? `${selected.size} seleccionados` : config.allLabel;
+    config.meta.textContent = selected.size ? groupLabel(group, firstSelectionValue(group)) : config.allLabel;
   }
 }
 
@@ -422,7 +429,7 @@ function renderResultSummary(totalRows, visibleRows) {
   if (resultHint) {
     const tokens = queryTokens();
     if (!hasActiveFilters()) {
-      resultHint.textContent = 'Usa la búsqueda, la multiselección y el panel lateral para refinar el catálogo.';
+      resultHint.textContent = 'Usa la búsqueda y los menus desplegables del panel para refinar el catálogo.';
     } else if (!visibleRows.length) {
       resultHint.textContent = 'No hay coincidencias con los filtros actuales. Puedes quitar alguno, abrir un favorito o limpiar todo.';
     } else if (tokens.length > 1) {
@@ -430,7 +437,7 @@ function renderResultSummary(totalRows, visibleRows) {
     } else if (savedFilterPresets.length) {
       resultHint.textContent = 'Puedes reutilizar una combinación guardada desde la zona de favoritos.';
     } else {
-      resultHint.textContent = 'Puedes combinar varios tipos, materiales y colores a la vez desde el panel.';
+      resultHint.textContent = 'Puedes cambiar cada filtro desde sus menus desplegables del panel.';
     }
   }
 }
@@ -726,12 +733,6 @@ filterClose?.addEventListener('click', closeFilters);
 filterPanelBackdrop?.addEventListener('click', closeFilters);
 
 document.addEventListener('click', event => {
-  const toggle = event.target.closest('[data-toggle-filter]');
-  if (toggle) {
-    toggleFilterValue(toggle.dataset.toggleFilter || '', toggle.dataset.filterValue || '');
-    render();
-    return;
-  }
   const remove = event.target.closest('[data-remove-filter]');
   if (remove) {
     removeFilter(remove.dataset.removeFilter || '');
@@ -754,6 +755,17 @@ document.addEventListener('click', event => {
   if (deletePresetButton) {
     deleteSavedPreset(deletePresetButton.dataset.deletePreset || '');
   }
+});
+
+document.addEventListener('change', event => {
+  const selectFilter = event.target.closest('[data-select-filter]');
+  if (!selectFilter) return;
+  const group = selectFilter.dataset.selectFilter || '';
+  const value = selectFilter.value || '';
+  if (!filterSelections[group]) return;
+  filterSelections[group].clear();
+  if (value) filterSelections[group].add(value);
+  render();
 });
 
 ensureReturnToEditButton();

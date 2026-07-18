@@ -6,12 +6,13 @@
   <title>Catálogo · jldv1508</title>
   <link rel="stylesheet" href="/styles.css?v=20260710-editor-refresh">
 </head>
-<body data-catalog-title="Catálogo unificado" data-catalog-url="/api/catalogo-publico" data-public-storage-key="jldv1508PublicCatalogConchasV1" data-empty-title="Catálogo en preparación" data-empty-text="Todavía no hay piezas visibles en este catálogo.">
+<body class="catalog-page" data-catalog-title="Catálogo unificado" data-catalog-url="/api/catalogo-publico" data-public-storage-key="jldv1508PublicCatalogConchasV1" data-empty-title="Catálogo en preparación" data-empty-text="Todavía no hay piezas visibles en este catálogo.">
   <header>
     <div class="brand-row">
       <a class="home-logo" href="/">jldv1508</a>
       <div class="brand-actions">
         <span class="visible-count" id="visibleCount">Cargando...</span>
+        <a class="catalog-edit" href="/area-cliente">Área cliente</a>
         <a class="catalog-edit" href="/edicion">Editar</a>
       </div>
     </div>
@@ -44,28 +45,28 @@
           <strong id="typeGroupTitle">Tipo</strong>
           <span id="typeGroupMeta">Todas</span>
         </div>
-        <div class="filter-toggle-grid" id="typeFilterChips"></div>
+        <div class="filter-select-wrap" id="typeFilterChips"></div>
       </section>
       <section class="filter-multi-group" aria-labelledby="submodelGroupTitle">
         <div class="filter-chip-group-head">
           <strong id="submodelGroupTitle">Submodelo</strong>
           <span id="submodelGroupMeta">Todos</span>
         </div>
-        <div class="filter-toggle-grid" id="submodelFilterChips"></div>
+        <div class="filter-select-wrap" id="submodelFilterChips"></div>
       </section>
       <section class="filter-multi-group" aria-labelledby="materialGroupTitle">
         <div class="filter-chip-group-head">
           <strong id="materialGroupTitle">Material</strong>
           <span id="materialGroupMeta">Todos</span>
         </div>
-        <div class="filter-toggle-grid" id="materialFilterChips"></div>
+        <div class="filter-select-wrap" id="materialFilterChips"></div>
       </section>
       <section class="filter-multi-group" aria-labelledby="colorGroupTitle">
         <div class="filter-chip-group-head">
           <strong id="colorGroupTitle">Color</strong>
           <span id="colorGroupMeta">Todos</span>
         </div>
-        <div class="filter-toggle-grid" id="colorFilterChips"></div>
+        <div class="filter-select-wrap" id="colorFilterChips"></div>
       </section>
       <section class="saved-filter-box" aria-labelledby="savedFiltersTitle">
         <div class="filter-chip-group-head">
@@ -80,7 +81,7 @@
       <section class="catalog-results-bar" aria-live="polite">
         <div class="catalog-results-copy">
           <strong id="resultSummary">Cargando catálogo...</strong>
-          <span id="resultHint">Usa la búsqueda, los selectores o los atajos para refinar el catálogo.</span>
+          <span id="resultHint">Usa la búsqueda y los menús desplegables para refinar el catálogo.</span>
         </div>
         <div class="catalog-results-actions">
           <button id="resultsFilterToggle" class="results-filter-button" type="button" aria-expanded="false" aria-controls="filterPanel">Abrir filtros</button>
