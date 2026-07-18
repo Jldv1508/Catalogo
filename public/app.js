@@ -4,6 +4,7 @@ const MATERIAL = { '000': 'Pendiente', '001': 'Resina', '002': 'Latón', '003': 
 const STATUS = { disponible: 'Disponible', reservado: 'Reservado', vendido: 'Vendido', oculto: 'Oculto' };
 const DEFAULT_TABLES = { types: TYPE, submodels: {}, materials: MATERIAL, colors: COLOR };
 const SAVED_FILTERS_KEY = 'jldv1508CatalogSavedFiltersV2';
+const CLIENT_AREA_URL = '/api/client-area';
 
 const grid = document.querySelector('#grid');
 const search = document.querySelector('#search');
@@ -55,6 +56,7 @@ let activeTables = DEFAULT_TABLES;
 let currentRows = [];
 let originalIndexById = new Map();
 let savedFilterPresets = [];
+let favoriteKeys = new Set();
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch]));
@@ -596,7 +598,10 @@ function render() {
       ${catalogImageHtml(item)}
     </button>
     <div class="card-info">
-      <span class="card-type">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''}</span>
+      <div class="card-info-head">
+        <span class="card-type">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''}</span>
+        <button class="favorite-toggle${isFavorite(item) ? ' is-active' : ''}" type="button" data-favorite-index="${index}" aria-pressed="${isFavorite(item) ? 'true' : 'false'}" aria-label="${isFavorite(item) ? 'Quitar de favoritos' : 'Añadir a favoritos'}">${isFavorite(item) ? 'Favorito' : 'Guardar'}</button>
+      </div>
       <strong>${escapeHtml(cardTitle(item))}</strong>
     </div>
   </article>`).join('') : emptyStateHtml();
@@ -689,6 +694,40 @@ function rowKey(item) {
   return item.codigo || item.archivo || item.referencia_csv || `${item.tipo || ''}-${item.material || ''}-${item.color || ''}-${item.nombre_comercial || ''}`;
 }
 
+function isFavorite(item) {
+  return favoriteKeys.has(rowKey(item));
+}
+
+async function loadClientAreaState() {
+  try {
+    const response = await fetch(CLIENT_AREA_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function saveClientFavorites() {
+  try {
+    await fetch(CLIENT_AREA_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ favorites: [...favoriteKeys] }),
+    });
+  } catch {}
+}
+
+function toggleFavoriteByIndex(index) {
+  const item = currentRows[index];
+  if (!item) return;
+  const key = rowKey(item);
+  if (favoriteKeys.has(key)) favoriteKeys.delete(key);
+  else favoriteKeys.add(key);
+  saveClientFavorites();
+  render();
+}
+
 function normalizeCatalogPayload(payload) {
   if (Array.isArray(payload)) return { items: payload, tables: null };
   return {
@@ -733,6 +772,11 @@ filterClose?.addEventListener('click', closeFilters);
 filterPanelBackdrop?.addEventListener('click', closeFilters);
 
 document.addEventListener('click', event => {
+  const favoriteButton = event.target.closest('[data-favorite-index]');
+  if (favoriteButton) {
+    toggleFavoriteByIndex(Number(favoriteButton.dataset.favoriteIndex));
+    return;
+  }
   const remove = event.target.closest('[data-remove-filter]');
   if (remove) {
     removeFilter(remove.dataset.removeFilter || '');
@@ -787,9 +831,11 @@ window.addEventListener('resize', () => {
 
 savedFilterPresets = loadSavedFilters();
 
-fetch(catalogUrl)
-  .then(response => response.json())
-  .then(data => {
+Promise.all([
+  fetch(catalogUrl).then(response => response.json()),
+  loadClientAreaState(),
+])
+  .then(([data, clientArea]) => {
     const payload = normalizeCatalogPayload(data);
     baseCatalog = [...payload.items];
     baseTables = mergeTables(payload.tables || DEFAULT_TABLES);
@@ -798,6 +844,7 @@ fetch(catalogUrl)
     activeTables = localData?.tables ? mergeTables(localData.tables) : baseTables;
     catalog = mergeCatalogRows(baseCatalog, localData?.items);
     originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
+    favoriteKeys = new Set(Array.isArray(clientArea?.favorites) ? clientArea.favorites : []);
     render();
   });
 
