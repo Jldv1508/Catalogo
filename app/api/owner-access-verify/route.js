@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, verifyOwnerLoginToken } from '../../../lib/access-session.js';
 import { isOwnerEmail } from '../../../lib/owner-access.js';
 
@@ -43,7 +44,7 @@ export async function GET(request) {
   }
 
   const nextPath = sanitizeNextPath(payload.next || '/base-clientes');
-  const response = Response.redirect(new URL(nextPath, request.url), 302);
+  const response = NextResponse.redirect(new URL(nextPath, request.url), 302);
   response.cookies.set(SESSION_COOKIE, await createSessionToken(payload.email), {
     httpOnly: true,
     sameSite: 'lax',
