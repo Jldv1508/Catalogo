@@ -38,7 +38,7 @@ function html(nextPath = '/area-cliente') {
     .step{padding:16px;border:1px solid #eaded1;border-radius:18px;background:#fcf7f1;display:grid;gap:8px}
     .step strong{font-size:15px;line-height:1.25}
     .step span{color:#6a5b4d;font-size:13px}
-    .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
     .card{padding:24px;display:grid;gap:16px}
     .card-head{display:grid;gap:8px}
     .card-kicker{display:inline-flex;align-items:center;min-height:28px;padding:4px 10px;border-radius:999px;background:#f6efe8;color:#6a5b4d;font-size:11px;font-weight:900;text-transform:uppercase;width:max-content}
@@ -122,6 +122,17 @@ function html(nextPath = '/area-cliente') {
           </form>
           <div class="helper" data-i18n="loginHelper">Si tu acceso ya está aceptado, entrarás directamente a tu área cliente.</div>
         </section>
+        <section class="card">
+          <div class="card-head">
+            <span class="card-kicker" data-i18n="ownerKicker">Propietario</span>
+            <h2 data-i18n="ownerTitle">Acceso seguro del propietario</h2>
+            <p class="muted" data-i18n="ownerText">Tu correo personal no puede usarse escribiéndolo aquí. Solo entra mediante un enlace seguro enviado a tu email.</p>
+          </div>
+          <form id="owner-form">
+            <button type="submit" data-i18n="ownerButton">Enviar enlace seguro a mi correo</button>
+          </form>
+          <div class="helper" data-i18n="ownerHelper">Este acceso es exclusivo para ${APPROVER_EMAIL}. Nadie puede usar tu correo solo con escribirlo.</div>
+        </section>
       </section>
       <div id="status" class="note">Esperando acción.</div>
       <div class="footer-note" data-i18n="footerNote">Si compartes esta página con clientes internacionales, pueden cambiar a inglés desde arriba.</div>
@@ -151,6 +162,11 @@ function html(nextPath = '/area-cliente') {
         approvedEmailLabel: 'Email aprobado',
         loginButton: 'Entrar con email aprobado',
         loginHelper: 'Si tu acceso ya está aceptado, entrarás directamente a tu área cliente.',
+        ownerKicker: 'Propietario',
+        ownerTitle: 'Acceso seguro del propietario',
+        ownerText: 'Tu correo personal no puede usarse escribiéndolo aquí. Solo entra mediante un enlace seguro enviado a tu email.',
+        ownerButton: 'Enviar enlace seguro a mi correo',
+        ownerHelper: 'Este acceso es exclusivo para ${APPROVER_EMAIL}. Nadie puede usar tu correo solo con escribirlo.',
         footerNote: 'Si compartes esta página con clientes internacionales, pueden cambiar a inglés desde arriba.',
         requestPlaceholder: 'tu@email.com',
         loginPlaceholder: 'Email aprobado',
@@ -161,7 +177,11 @@ function html(nextPath = '/area-cliente') {
         requestSent: 'Solicitud enviada. Cuando ${APPROVER_EMAIL} la apruebe, vuelve aquí y entra con el mismo email.',
         checkingAccess: 'Comprobando acceso aprobado...',
         accessPending: 'Ese email todavía no ha sido aprobado.',
+        ownerProtected: 'Ese correo está protegido. Usa el acceso seguro del propietario.',
         loginFailed: 'No se pudo iniciar sesión.',
+        ownerSending: 'Enviando enlace seguro al correo del propietario...',
+        ownerSent: 'Enlace seguro enviado. Revisa ${APPROVER_EMAIL} para entrar solo desde ese correo.',
+        ownerFailed: 'No se pudo enviar el enlace seguro del propietario.',
       },
       en: {
         eyebrow: 'Private access',
@@ -185,6 +205,11 @@ function html(nextPath = '/area-cliente') {
         approvedEmailLabel: 'Approved email',
         loginButton: 'Sign in with approved email',
         loginHelper: 'If your access is already approved, you will go straight to your client area.',
+        ownerKicker: 'Owner',
+        ownerTitle: 'Secure owner access',
+        ownerText: 'Your personal email cannot be used by typing it here. You can only sign in through a secure link sent to your email.',
+        ownerButton: 'Send secure link to my email',
+        ownerHelper: 'This access is exclusive to ${APPROVER_EMAIL}. Nobody can use your email just by typing it.',
         footerNote: 'If you share this page with international clients, they can switch to English from the top.',
         requestPlaceholder: 'your@email.com',
         loginPlaceholder: 'Approved email',
@@ -195,7 +220,11 @@ function html(nextPath = '/area-cliente') {
         requestSent: 'Request sent. Once ${APPROVER_EMAIL} approves it, come back here and sign in with the same email.',
         checkingAccess: 'Checking approved access...',
         accessPending: 'That email has not been approved yet.',
+        ownerProtected: 'That email is protected. Use the secure owner access instead.',
         loginFailed: 'Could not sign in.',
+        ownerSending: 'Sending secure link to the owner email...',
+        ownerSent: 'Secure link sent. Check ${APPROVER_EMAIL} to sign in only from that email.',
+        ownerFailed: 'Could not send the secure owner link.',
       },
     };
 
@@ -263,10 +292,35 @@ function html(nextPath = '/area-cliente') {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setStatus(payload.error === 'ACCESS_PENDING' ? translateText('accessPending') : translateText('loginFailed'));
+        if (payload.error === 'ACCESS_PENDING') {
+          setStatus(translateText('accessPending'));
+          return;
+        }
+        if (payload.error === 'OWNER_MAGIC_LINK_REQUIRED') {
+          setStatus(translateText('ownerProtected'));
+          return;
+        }
+        setStatus(translateText('loginFailed'));
         return;
       }
       window.location.href = nextPath;
+    });
+
+    document.getElementById('owner-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      statusEl.dataset.locked = '1';
+      setStatus(translateText('ownerSending'));
+      const nextPath = document.getElementById('next-path').value || '/base-clientes';
+      const response = await fetch('/api/owner-access-request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ next: nextPath }),
+      });
+      if (!response.ok) {
+        setStatus(translateText('ownerFailed'));
+        return;
+      }
+      setStatus(translateText('ownerSent'));
     });
   </script>
 </body>

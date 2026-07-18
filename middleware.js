@@ -6,6 +6,8 @@ const PUBLIC_ROUTES = new Set([
   '/api/access-request',
   '/api/access-session',
   '/api/access-approve',
+  '/api/owner-access-request',
+  '/api/owner-access-verify',
 ]);
 
 function isPublicPath(pathname) {
