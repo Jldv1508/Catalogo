@@ -1,34 +1,36 @@
 import { NextResponse } from 'next/server';
+import { SESSION_COOKIE, verifySessionToken } from './lib/access-session.js';
+
+const PUBLIC_ROUTES = new Set([
+  '/sign-in',
+  '/api/access-request',
+  '/api/access-session',
+  '/api/access-approve',
+]);
+
+function isPublicPath(pathname) {
+  if (PUBLIC_ROUTES.has(pathname)) return true;
+  if (pathname.startsWith('/_next/')) return true;
+  if (pathname === '/favicon.ico') return true;
+  return /\.[a-z0-9]+$/i.test(pathname);
+}
 
 export const config = {
-  matcher: ['/admin/:path*', '/edicion/:path*'],
+  matcher: ['/((?!_next/static|_next/image).*)'],
 };
 
-export function middleware(request) {
-  const user = process.env.EDIT_USER || process.env.ADMIN_USER || 'Jldv1508';
-  const password = process.env.EDIT_PASSWORD || process.env.ADMIN_PASSWORD || 'Temblor2018mjf';
-
-  if (!password) {
-    return new NextResponse('Falta configurar la contrasena del area protegida.', { status: 503 });
+export async function middleware(request) {
+  const { pathname, search } = request.nextUrl;
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
   }
 
-  const auth = request.headers.get('authorization') || '';
-  const [scheme, encoded] = auth.split(' ');
-
-  if (scheme === 'Basic' && encoded) {
-    const decoded = atob(encoded);
-    const separator = decoded.indexOf(':');
-    const sentUser = decoded.slice(0, separator);
-    const sentPassword = decoded.slice(separator + 1);
-    if (sentUser === user && sentPassword === password) {
-      return NextResponse.next();
-    }
+  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  if (session?.email) {
+    return NextResponse.next();
   }
 
-  return new NextResponse('Acceso restringido', {
-    status: 401,
-    headers: {
-      'WWW-Authenticate': 'Basic realm="jldv1508 edicion", charset="UTF-8"',
-    },
-  });
+  const signInUrl = new URL('/sign-in', request.url);
+  signInUrl.searchParams.set('next', `${pathname}${search}`);
+  return NextResponse.redirect(signInUrl);
 }
