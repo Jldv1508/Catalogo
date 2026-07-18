@@ -1,6 +1,6 @@
 import { verifySessionToken, SESSION_COOKIE } from '../../lib/access-session.js';
 
-const APPROVER_EMAIL = 'jldv1508@icloud.com';
+const APPROVER_EMAIL = 'bisut2U@icloud.com';
 
 function sanitizeNextPath(value) {
   const nextPath = String(value || '/area-cliente').trim();

@@ -8,7 +8,7 @@ Toda la web queda protegida por `sign-in` con email:
 
 - El visitante entra en `/sign-in`
 - Solicita acceso con su email
-- La solicitud llega a `jldv1508@icloud.com`
+- La solicitud llega a `bisut2U@icloud.com`
 - La aprobacion o denegacion se hace desde el enlace recibido por correo
 - Si el email esta aprobado, se crea una sesion por cookie y ya puede entrar
 
@@ -23,12 +23,12 @@ Crea un `.env.local` basado en `.env.example`.
 
 ```text
 SESSION_SECRET=una_clave_larga_y_privada
-ACCESS_APPROVER_EMAIL=jldv1508@icloud.com
+ACCESS_APPROVER_EMAIL=bisut2U@icloud.com
 SMTP_HOST=smtp.tu-proveedor.com
 SMTP_PORT=587
 SMTP_USER=tu-usuario-smtp
 SMTP_PASS=tu-password-o-app-password
-SMTP_FROM=jldv1508@icloud.com
+SMTP_FROM=bisut2U@icloud.com
 ```
 
 Notas:

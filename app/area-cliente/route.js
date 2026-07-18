@@ -9,7 +9,7 @@ function pageHtml(email) {
   const safeEmail = escapeHtml(email);
   const safeEmailJson = JSON.stringify(email);
   const ownerLinks = isOwnerEmail(email)
-    ? '<a href="/base-clientes" class="secondary">Base de clientes</a>'
+    ? '<a href="/edicion" class="secondary">Editar catalogo</a><a href="/base-clientes" class="secondary">Base de clientes</a>'
     : '';
   return `<!doctype html>
 <html lang="es">
@@ -84,6 +84,13 @@ function pageHtml(email) {
         <span>Tu sesion esta vinculada al email aprobado y se mantiene mientras la cookie siga activa.</span>
         <span class="pill">${safeEmail}</span>
       </article>
+      ${isOwnerEmail(email) ? `
+      <article>
+        <strong>Edicion del catalogo</strong>
+        <span>Como propietario, desde aqui puedes abrir el editor protegido y seguir gestionando el catalogo.</span>
+        <a href="/edicion" class="secondary">Abrir editor</a>
+      </article>
+      ` : ''}
       <article>
         <strong>Salir</strong>
         <span>Si terminas, puedes cerrar la sesion desde aqui y volver al acceso por email.</span>
