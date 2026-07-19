@@ -1,7 +1,5 @@
 import { verifySessionToken, SESSION_COOKIE } from '../../lib/access-session.js';
 
-const APPROVER_EMAIL = 'jldv1508@icloud.com';
-
 function sanitizeNextPath(value) {
   const nextPath = String(value || '/area-cliente').trim();
   if (!nextPath.startsWith('/') || nextPath.startsWith('//')) {
@@ -31,14 +29,17 @@ function html(nextPath = '/area-cliente') {
     h1{margin:0;font-family:Georgia,serif;font-size:clamp(34px,5vw,60px);line-height:.95}
     p{margin:0;line-height:1.55}
     .muted{color:#6a5b4d;font-size:14px}
+    .header-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .lang-switch{display:flex;gap:8px;flex-wrap:wrap}
     .lang-button{min-height:40px;padding:9px 14px;border:1px solid #d8cdbf;border-radius:999px;background:#fff;color:#2d241d;font:inherit;font-weight:900;cursor:pointer}
     .lang-button.is-active{background:#2d241d;color:#fff;border-color:#2d241d}
+    .gear-button{width:44px;min-width:44px;min-height:44px;padding:0;border:1px solid #d8cdbf;border-radius:999px;background:#fff;color:#2d241d;font-size:22px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+    .gear-button.is-active{background:#2d241d;color:#fff;border-color:#2d241d}
     .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
     .step{padding:16px;border:1px solid #eaded1;border-radius:18px;background:#fcf7f1;display:grid;gap:8px}
     .step strong{font-size:15px;line-height:1.25}
     .step span{color:#6a5b4d;font-size:13px}
-    .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+    .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
     .card{padding:24px;display:grid;gap:16px}
     .card-head{display:grid;gap:8px}
     .card-kicker{display:inline-flex;align-items:center;min-height:28px;padding:4px 10px;border-radius:999px;background:#f6efe8;color:#6a5b4d;font-size:11px;font-weight:900;text-transform:uppercase;width:max-content}
@@ -53,6 +54,8 @@ function html(nextPath = '/area-cliente') {
     .helper{padding:14px 16px;border-radius:16px;background:#faf5ee;border:1px solid #eaded1;color:#5f4e3f;font-size:13px}
     .note{padding:14px 16px;border-radius:16px;background:#f6efe8;border:1px solid #e6d8c9;min-height:54px;display:flex;align-items:center}
     .footer-note{padding:16px 18px;border-radius:20px;background:#fff;border:1px solid #e0d6ca;color:#6a5b4d;font-size:14px;box-shadow:0 10px 30px rgba(59,39,21,.05)}
+    .owner-panel{background:#fff;border:1px solid #e0d6ca;border-radius:24px;box-shadow:0 16px 44px rgba(59,39,21,.08);padding:24px;display:grid;gap:16px}
+    .owner-panel[hidden]{display:none}
     @media(max-width:860px){
       .steps,.cards{grid-template-columns:1fr}
       .hero,.card{padding:20px}
@@ -68,11 +71,14 @@ function html(nextPath = '/area-cliente') {
           <div class="hero-copy">
             <p class="eyebrow" data-i18n="eyebrow">Acceso privado · Private access</p>
             <h1 data-i18n="title">Entrar con email / Sign in with email</h1>
-            <p class="muted" data-i18n="intro">Solicita acceso con tu email o entra si ya ha sido aprobado. La aprobación llega a <strong>${APPROVER_EMAIL}</strong>.</p>
+            <p class="muted" data-i18n="intro">Solicita acceso con tu email o entra si ya ha sido aprobado.</p>
           </div>
-          <div class="lang-switch" aria-label="Language switcher">
-            <button type="button" class="lang-button is-active" data-lang="es">ES</button>
-            <button type="button" class="lang-button" data-lang="en">EN</button>
+          <div class="header-tools">
+            <div class="lang-switch" aria-label="Language switcher">
+              <button type="button" class="lang-button is-active" data-lang="es">ES</button>
+              <button type="button" class="lang-button" data-lang="en">EN</button>
+            </div>
+            <button type="button" id="owner-toggle" class="gear-button" aria-label="Owner access" aria-expanded="false">&#9881;</button>
           </div>
         </div>
         <section class="steps" aria-label="How access works">
@@ -82,7 +88,7 @@ function html(nextPath = '/area-cliente') {
           </article>
           <article class="step">
             <strong data-i18n="step2Title">2. Espera aprobación</strong>
-            <span data-i18n="step2Text">El email llega a ${APPROVER_EMAIL} y el acceso se aprueba manualmente.</span>
+            <span data-i18n="step2Text">Revisamos tu solicitud y autorizamos el acceso manualmente.</span>
           </article>
           <article class="step">
             <strong data-i18n="step3Title">3. Entra con tu email</strong>
@@ -122,17 +128,17 @@ function html(nextPath = '/area-cliente') {
           </form>
           <div class="helper" data-i18n="loginHelper">Si tu acceso ya está aceptado, entrarás directamente a tu área cliente.</div>
         </section>
-        <section class="card">
-          <div class="card-head">
-            <span class="card-kicker" data-i18n="ownerKicker">Propietario</span>
-            <h2 data-i18n="ownerTitle">Acceso seguro del propietario</h2>
-            <p class="muted" data-i18n="ownerText">Tu correo personal no puede usarse escribiéndolo aquí. Solo entra mediante un enlace seguro enviado a tu email.</p>
-          </div>
-          <form id="owner-form">
-            <button type="submit" data-i18n="ownerButton">Enviar enlace seguro a mi correo</button>
-          </form>
-          <div class="helper" data-i18n="ownerHelper">Este acceso es exclusivo para ${APPROVER_EMAIL}. Nadie puede usar tu correo solo con escribirlo.</div>
-        </section>
+      </section>
+      <section id="owner-panel" class="owner-panel" hidden>
+        <div class="card-head">
+          <span class="card-kicker" data-i18n="ownerKicker">Propietario</span>
+          <h2 data-i18n="ownerTitle">Acceso seguro del propietario</h2>
+          <p class="muted" data-i18n="ownerText">Tu correo personal no puede usarse escribiéndolo aquí. Solo entra mediante un enlace seguro enviado a tu email.</p>
+        </div>
+        <form id="owner-form">
+          <button type="submit" data-i18n="ownerButton">Enviar enlace seguro a mi correo</button>
+        </form>
+        <div class="helper" data-i18n="ownerHelper">Este acceso solo funciona mediante un enlace seguro y queda oculto para clientes.</div>
       </section>
       <div id="status" class="note">Esperando acción.</div>
       <div class="footer-note" data-i18n="footerNote">Si compartes esta página con clientes internacionales, pueden cambiar a inglés desde arriba.</div>
@@ -143,11 +149,11 @@ function html(nextPath = '/area-cliente') {
       es: {
         eyebrow: 'Acceso privado',
         title: 'Entrar con email',
-        intro: 'Solicita acceso con tu email o entra si ya ha sido aprobado. La aprobación llega a <strong>${APPROVER_EMAIL}</strong>.',
+        intro: 'Solicita acceso con tu email o entra si ya ha sido aprobado.',
         step1Title: '1. Solicita acceso',
         step1Text: 'Escribe tu email en el primer bloque para enviar la solicitud.',
         step2Title: '2. Espera aprobación',
-        step2Text: 'El email llega a ${APPROVER_EMAIL} y el acceso se aprueba manualmente.',
+        step2Text: 'Revisamos tu solicitud y autorizamos el acceso manualmente.',
         step3Title: '3. Entra con tu email',
         step3Text: 'Cuando esté aprobado, usa el segundo bloque para entrar y abrir tu área cliente.',
         requestKicker: 'Nuevo acceso',
@@ -166,7 +172,7 @@ function html(nextPath = '/area-cliente') {
         ownerTitle: 'Acceso seguro del propietario',
         ownerText: 'Tu correo personal no puede usarse escribiéndolo aquí. Solo entra mediante un enlace seguro enviado a tu email.',
         ownerButton: 'Enviar enlace seguro a mi correo',
-        ownerHelper: 'Este acceso es exclusivo para ${APPROVER_EMAIL}. Nadie puede usar tu correo solo con escribirlo.',
+        ownerHelper: 'Este acceso solo funciona mediante un enlace seguro y queda oculto para clientes.',
         footerNote: 'Si compartes esta página con clientes internacionales, pueden cambiar a inglés desde arriba.',
         requestPlaceholder: 'tu@email.com',
         loginPlaceholder: 'Email aprobado',
@@ -174,23 +180,23 @@ function html(nextPath = '/area-cliente') {
         sendingRequest: 'Enviando solicitud...',
         requestInvalid: 'No se pudo registrar la solicitud. Revisa el email.',
         requestSmtpMissing: 'Solicitud guardada, pero falta configurar el envío SMTP para que llegue el email de aprobación.',
-        requestSent: 'Solicitud enviada. Cuando ${APPROVER_EMAIL} la apruebe, vuelve aquí y entra con el mismo email.',
+        requestSent: 'Solicitud enviada. Cuando se apruebe, vuelve aquí y entra con el mismo email.',
         checkingAccess: 'Comprobando acceso aprobado...',
         accessPending: 'Ese email todavía no ha sido aprobado.',
         ownerProtected: 'Ese correo está protegido. Usa el acceso seguro del propietario.',
         loginFailed: 'No se pudo iniciar sesión.',
         ownerSending: 'Enviando enlace seguro al correo del propietario...',
-        ownerSent: 'Enlace seguro enviado. Revisa ${APPROVER_EMAIL} para entrar solo desde ese correo.',
+        ownerSent: 'Enlace seguro enviado. Revisa tu correo para entrar.',
         ownerFailed: 'No se pudo enviar el enlace seguro del propietario.',
       },
       en: {
         eyebrow: 'Private access',
         title: 'Sign in with email',
-        intro: 'Request access with your email or sign in if it has already been approved. Approval requests are sent to <strong>${APPROVER_EMAIL}</strong>.',
+        intro: 'Request access with your email or sign in if it has already been approved.',
         step1Title: '1. Request access',
         step1Text: 'Enter your email in the first section to send an access request.',
         step2Title: '2. Wait for approval',
-        step2Text: 'The email is sent to ${APPROVER_EMAIL} and access is approved manually.',
+        step2Text: 'We review your request and authorize access manually.',
         step3Title: '3. Sign in with your email',
         step3Text: 'Once approved, use the second section to sign in and open your client area.',
         requestKicker: 'New access',
@@ -209,7 +215,7 @@ function html(nextPath = '/area-cliente') {
         ownerTitle: 'Secure owner access',
         ownerText: 'Your personal email cannot be used by typing it here. You can only sign in through a secure link sent to your email.',
         ownerButton: 'Send secure link to my email',
-        ownerHelper: 'This access is exclusive to ${APPROVER_EMAIL}. Nobody can use your email just by typing it.',
+        ownerHelper: 'This access only works through a secure link and stays hidden from clients.',
         footerNote: 'If you share this page with international clients, they can switch to English from the top.',
         requestPlaceholder: 'your@email.com',
         loginPlaceholder: 'Approved email',
@@ -217,13 +223,13 @@ function html(nextPath = '/area-cliente') {
         sendingRequest: 'Sending request...',
         requestInvalid: 'The request could not be saved. Please check the email.',
         requestSmtpMissing: 'The request was saved, but SMTP email delivery still needs to be configured.',
-        requestSent: 'Request sent. Once ${APPROVER_EMAIL} approves it, come back here and sign in with the same email.',
+        requestSent: 'Request sent. Once it is approved, come back here and sign in with the same email.',
         checkingAccess: 'Checking approved access...',
         accessPending: 'That email has not been approved yet.',
         ownerProtected: 'That email is protected. Use the secure owner access instead.',
         loginFailed: 'Could not sign in.',
         ownerSending: 'Sending secure link to the owner email...',
-        ownerSent: 'Secure link sent. Check ${APPROVER_EMAIL} to sign in only from that email.',
+        ownerSent: 'Secure link sent. Check your email to sign in.',
         ownerFailed: 'Could not send the secure owner link.',
       },
     };
@@ -231,7 +237,7 @@ function html(nextPath = '/area-cliente') {
     let currentLang = 'es';
     const statusEl = document.getElementById('status');
     const setStatus = (text) => { statusEl.textContent = text; };
-    const translateText = (key) => (TRANSLATIONS[currentLang]?.[key] || '').replaceAll('${APPROVER_EMAIL}', ${JSON.stringify(APPROVER_EMAIL)});
+    const translateText = (key) => (TRANSLATIONS[currentLang]?.[key] || '');
 
     function applyLanguage(lang) {
       currentLang = TRANSLATIONS[lang] ? lang : 'es';
@@ -255,6 +261,19 @@ function html(nextPath = '/area-cliente') {
 
     document.querySelectorAll('[data-lang]').forEach(button => {
       button.addEventListener('click', () => applyLanguage(button.dataset.lang || 'es'));
+    });
+
+    const ownerToggle = document.getElementById('owner-toggle');
+    const ownerPanel = document.getElementById('owner-panel');
+    ownerToggle?.addEventListener('click', () => {
+      const isOpen = !ownerPanel.hasAttribute('hidden');
+      if (isOpen) {
+        ownerPanel.setAttribute('hidden', '');
+      } else {
+        ownerPanel.removeAttribute('hidden');
+      }
+      ownerToggle.classList.toggle('is-active', !isOpen);
+      ownerToggle.setAttribute('aria-expanded', String(!isOpen));
     });
 
     document.getElementById('request-form').addEventListener('submit', async (event) => {
