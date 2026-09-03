@@ -3,14 +3,15 @@ import { SESSION_COOKIE, verifySessionToken } from './lib/access-session.js';
 
 const PUBLIC_ROUTES = new Set([
   '/sign-in',
+  '/admin-login',
   '/api/access-request',
   '/api/access-session',
   '/api/access-approve',
   '/api/owner-access-request',
   '/api/owner-access-verify',
   '/api/owner-local-link',
-  '/api/owner-smtp-test',
   '/api/owner-local-bypass',
+  '/api/owner-smtp-test',
 ]);
 
 function isPublicPath(pathname) {
