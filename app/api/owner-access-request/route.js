@@ -38,7 +38,13 @@ export async function POST(request) {
 
   try {
     await sendOwnerSignInEmail({ signInUrl });
-    return NextResponse.json({ ok: true, emailSent: true, localFallback: false });
+    return NextResponse.json({
+      ok: true,
+      emailSent: true,
+      localFallback,
+      signInUrl: localFallback ? signInUrl : null,
+      expiresInMinutes: 20,
+    });
   } catch (error) {
     return NextResponse.json({
       ok: false,

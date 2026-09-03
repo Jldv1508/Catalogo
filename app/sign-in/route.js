@@ -192,7 +192,8 @@ function html(nextPath = '/area-cliente') {
         ownerProtected: 'Ese correo está protegido. Usa el acceso seguro del propietario.',
         loginFailed: 'No se pudo iniciar sesión.',
         ownerSending: 'Enviando enlace seguro al correo del propietario...',
-        ownerSent: 'Enlace seguro enviado. Revisa tu correo para entrar.',
+        ownerSent: 'Correo enviado correctamente. Si no llega en 2 minutos, usa el enlace local de abajo para entrar.',
+        ownerSentFast: 'Correo enviado. Si tarda, usa el siguiente enlace para entrar ahora:',
         ownerFailed: 'No se pudo enviar el enlace seguro del propietario.',
         ownerFallbackTitle: 'Correo no enviado. Usa este enlace para entrar:',
         ownerFallbackLink: 'Entrar ahora con enlace local',
@@ -245,7 +246,8 @@ function html(nextPath = '/area-cliente') {
         ownerProtected: 'That email is protected. Use the secure owner access instead.',
         loginFailed: 'Could not sign in.',
         ownerSending: 'Sending secure link to the owner email...',
-        ownerSent: 'Secure link sent. Check your email to sign in.',
+        ownerSent: 'Email sent successfully. If it does not arrive in 2 minutes, use the local link below to sign in.',
+        ownerSentFast: 'Email sent. If it is slow, use the following link to sign in now:',
         ownerFailed: 'Could not send the secure owner link.',
         ownerFallbackTitle: 'Email could not be sent. Use this link to sign in instead:',
         ownerFallbackLink: 'Sign in now with local link',
@@ -384,25 +386,60 @@ function html(nextPath = '/area-cliente') {
       statusEl.dataset.locked = '1';
       setStatus(translateText('ownerSending'));
       const nextPath = document.getElementById('next-path').value || '/base-clientes';
-      const response = await fetch('/api/owner-access-request', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ next: nextPath }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (payload.localFallback && payload.signInUrl) {
-          const quote = String.fromCharCode(34);
-          const safeUrl = String(payload.signInUrl).split(quote).join('&quot;');
+      const quote = String.fromCharCode(34);
+      const nl = String.fromCharCode(10);
+      const host = window.location.hostname;
+      const isLocal = ['localhost', '127.0.0.1', '[::1]', ''].includes(host) || host.endsWith('.local');
+      function renderFallback(titleKey, payload) {
+        const safeUrl = String(payload?.signInUrl || '').split(quote).join('&quot;');
+        const mins = Number(payload?.expiresInMinutes) || 20;
+        if (safeUrl) {
           setStatus(
-            '<strong>' + translateText('ownerFallbackTitle') + '</strong> ' +
+            '<strong>' + translateText(titleKey) + '</strong> ' +
             '<a style=color:#6f4d2d;font-weight:900;margin-left:8px href=' + safeUrl + '>' + translateText('ownerFallbackLink') + '</a> ' +
-            '<span style=display:block;color:#6a5b4d;font-size:13px;margin-top:6px>Caduca en ' + (Number(payload.expiresInMinutes) || 20) + ' minutos y solo funciona en local.</span>',
+            '<span style=display:block;color:#6a5b4d;font-size:13px;margin-top:6px>Caduca en ' + mins + ' minutos y solo funciona en local.</span>',
             { html: true },
           );
+        } else {
+          setStatus(translateText(titleKey === 'ownerFallbackTitle' ? 'ownerFailed' : 'ownerSent'));
+        }
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      let response;
+      let payload = {};
+      try {
+        response = await fetch('/api/owner-access-request', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ next: nextPath }),
+          signal: controller.signal,
+        });
+        payload = await response.json().catch(() => ({}));
+      } catch (err) {
+        clearTimeout(timeout);
+        if (isLocal) {
+          try {
+            const localFallbackResp = await fetch('/api/owner-local-link?next=' + encodeURIComponent(nextPath), { cache: 'no-store' });
+            const localPayload = await localFallbackResp.json().catch(() => ({}));
+            renderFallback('ownerFallbackTitle', localPayload);
+            return;
+          } catch (_) {}
+        }
+        setStatus(translateText('ownerFailed'));
+        return;
+      }
+      clearTimeout(timeout);
+      if (!response.ok) {
+        if (payload.localFallback && payload.signInUrl) {
+          renderFallback('ownerFallbackTitle', payload);
           return;
         }
         setStatus(translateText('ownerFailed'));
+        return;
+      }
+      if (isLocal && payload.signInUrl) {
+        renderFallback('ownerSentFast', payload);
         return;
       }
       setStatus(translateText('ownerSent'));
