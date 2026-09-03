@@ -281,7 +281,7 @@ function html(nextPath = '/area-cliente') {
       if (!ownerSmtpStatusDetails) {
         ownerSmtpStatusEl.textContent = base;
       } else {
-        ownerSmtpStatusEl.innerHTML = base + '<div style="margin-top:8px;color:#4b4037;font-size:12px;white-space:pre-wrap;word-break:break-word">' + ownerSmtpStatusDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+        ownerSmtpStatusEl.innerHTML = base + '<div style=margin-top:8px;color:#4b4037;font-size:12px;white-space:pre-wrap;word-break:break-word>' + ownerSmtpStatusDetails.split('<').join('&lt;').split('>').join('&gt;') + '</div>';
       }
     };
     const translateText = (key) => (TRANSLATIONS[currentLang]?.[key] || '');
@@ -394,11 +394,12 @@ function html(nextPath = '/area-cliente') {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (payload.localFallback && payload.signInUrl) {
-          const safeUrl = String(payload.signInUrl).replace(/"/g, '&quot;');
+          const quote = String.fromCharCode(34);
+          const safeUrl = String(payload.signInUrl).split(quote).join('&quot;');
           setStatus(
             '<strong>' + translateText('ownerFallbackTitle') + '</strong> ' +
-            '<a style="color:#6f4d2d;font-weight:900;margin-left:8px" href="' + safeUrl + '">' + translateText('ownerFallbackLink') + '</a> ' +
-            '<span style="display:block;color:#6a5b4d;font-size:13px;margin-top:6px">Caduca en ' + (Number(payload.expiresInMinutes) || 20) + ' minutos y solo funciona en local.</span>',
+            '<a style=color:#6f4d2d;font-weight:900;margin-left:8px href=' + safeUrl + '>' + translateText('ownerFallbackLink') + '</a> ' +
+            '<span style=display:block;color:#6a5b4d;font-size:13px;margin-top:6px>Caduca en ' + (Number(payload.expiresInMinutes) || 20) + ' minutos y solo funciona en local.</span>',
             { html: true },
           );
           return;
@@ -435,7 +436,7 @@ function html(nextPath = '/area-cliente') {
         const parts = [];
         if (!payload.verifyOk) parts.push('SMTP verify: ' + (payload?.verifyError?.message || 'fallo'));
         if (!payload.sendOk) parts.push('SMTP send: ' + (payload?.sendError?.message || 'fallo'));
-        setOwnerSmtpStatus('ownerSmtpFail', parts.join('\n') || translateText('ownerSmtpFail'));
+        setOwnerSmtpStatus('ownerSmtpFail', parts.join(String.fromCharCode(10)) || translateText('ownerSmtpFail'));
       } catch (err) {
         setOwnerSmtpStatus('ownerSmtpFail', err?.message || String(err));
       }
