@@ -143,6 +143,7 @@ function html(nextPath = '/area-cliente') {
         <div class="owner-actions">
           <button type="button" id="owner-smtp-test" class="secondary" data-i18n="ownerSmtpTest">Probar envio de correo</button>
           <a id="owner-local-link" class="secondary" data-i18n="ownerLocalLink" href="/api/owner-local-link?next=%2Fbase-clientes" target="_blank" rel="noopener noreferrer">Generar enlace local directo</a>
+          <a id="owner-local-bypass" class="secondary" href="/api/owner-local-bypass?next=%2Fbase-clientes" hidden>ENTRAR COMO ADMINISTRADOR AHORA</a>
         </div>
         <div id="ownerSmtpStatus" class="helper" data-i18n="ownerSmtpIdle">Sin pruebas realizadas aun.</div>
         <div class="helper" data-i18n="ownerHelper">Este acceso solo funciona mediante un enlace seguro y queda oculto para clientes.</div>
@@ -305,6 +306,14 @@ function html(nextPath = '/area-cliente') {
 
     const browserLang = (navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'es';
     applyLanguage(browserLang);
+
+    (function showLocalBypassIfLocal() {
+      const host = window.location.hostname;
+      const isLocal = ['localhost', '127.0.0.1', '[::1]', ''].includes(host) || host.endsWith('.local');
+      if (!isLocal) return;
+      const bypass = document.getElementById('owner-local-bypass');
+      if (bypass) bypass.removeAttribute('hidden');
+    })();
 
     document.querySelectorAll('[data-lang]').forEach(button => {
       button.addEventListener('click', () => applyLanguage(button.dataset.lang || 'es'));

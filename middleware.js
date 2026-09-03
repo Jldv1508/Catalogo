@@ -10,6 +10,7 @@ const PUBLIC_ROUTES = new Set([
   '/api/owner-access-verify',
   '/api/owner-local-link',
   '/api/owner-smtp-test',
+  '/api/owner-local-bypass',
 ]);
 
 function isPublicPath(pathname) {
