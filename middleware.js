@@ -8,6 +8,8 @@ const PUBLIC_ROUTES = new Set([
   '/api/access-approve',
   '/api/owner-access-request',
   '/api/owner-access-verify',
+  '/api/owner-local-link',
+  '/api/owner-smtp-test',
 ]);
 
 function isPublicPath(pathname) {

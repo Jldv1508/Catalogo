@@ -56,6 +56,8 @@ function html(nextPath = '/area-cliente') {
     .footer-note{padding:16px 18px;border-radius:20px;background:#fff;border:1px solid #e0d6ca;color:#6a5b4d;font-size:14px;box-shadow:0 10px 30px rgba(59,39,21,.05)}
     .owner-panel{background:#fff;border:1px solid #e0d6ca;border-radius:24px;box-shadow:0 16px 44px rgba(59,39,21,.08);padding:24px;display:grid;gap:16px}
     .owner-panel[hidden]{display:none}
+    .owner-actions{display:flex;flex-wrap:wrap;gap:10px}
+    .owner-actions a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
     @media(max-width:860px){
       .steps,.cards{grid-template-columns:1fr}
       .hero,.card{padding:20px}
@@ -138,6 +140,11 @@ function html(nextPath = '/area-cliente') {
         <form id="owner-form">
           <button type="submit" data-i18n="ownerButton">Enviar enlace seguro a mi correo</button>
         </form>
+        <div class="owner-actions">
+          <button type="button" id="owner-smtp-test" class="secondary" data-i18n="ownerSmtpTest">Probar envio de correo</button>
+          <a id="owner-local-link" class="secondary" data-i18n="ownerLocalLink" href="/api/owner-local-link?next=%2Fbase-clientes" target="_blank" rel="noopener noreferrer">Generar enlace local directo</a>
+        </div>
+        <div id="ownerSmtpStatus" class="helper" data-i18n="ownerSmtpIdle">Sin pruebas realizadas aun.</div>
         <div class="helper" data-i18n="ownerHelper">Este acceso solo funciona mediante un enlace seguro y queda oculto para clientes.</div>
       </section>
       <div id="status" class="note">Esperando acción.</div>
@@ -188,6 +195,16 @@ function html(nextPath = '/area-cliente') {
         ownerSending: 'Enviando enlace seguro al correo del propietario...',
         ownerSent: 'Enlace seguro enviado. Revisa tu correo para entrar.',
         ownerFailed: 'No se pudo enviar el enlace seguro del propietario.',
+        ownerFallbackTitle: 'Correo no enviado. Usa este enlace para entrar:',
+        ownerFallbackLink: 'Entrar ahora con enlace local',
+        ownerSmtpTest: 'Probar envio de correo',
+        ownerLocalLink: 'Generar enlace local directo',
+        ownerSmtpIdle: 'Sin pruebas realizadas aun.',
+        ownerSmtpChecking: 'Comprobando conexion SMTP y envio real...',
+        ownerSmtpOk: 'Correo de prueba enviado correctamente. Revisa tu bandeja.',
+        ownerSmtpConfigMissing: 'Falta configurar SMTP en el entorno (host/usuario/contrasena).',
+        ownerSmtpFail: 'No se pudo enviar el correo de prueba. Revisa los detalles tecnicos del servidor SMTP.',
+        ownerSmtpLocalOnly: 'Esta prueba solo esta disponible en localhost o entorno local.',
       },
       en: {
         eyebrow: 'Private access',
@@ -231,12 +248,41 @@ function html(nextPath = '/area-cliente') {
         ownerSending: 'Sending secure link to the owner email...',
         ownerSent: 'Secure link sent. Check your email to sign in.',
         ownerFailed: 'Could not send the secure owner link.',
+        ownerFallbackTitle: 'Email could not be sent. Use this link to sign in instead:',
+        ownerFallbackLink: 'Sign in now with local link',
+        ownerSmtpTest: 'Test email delivery',
+        ownerLocalLink: 'Generate direct local link',
+        ownerSmtpIdle: 'No tests run yet.',
+        ownerSmtpChecking: 'Checking SMTP connection and real delivery...',
+        ownerSmtpOk: 'Test email sent successfully. Check your inbox.',
+        ownerSmtpConfigMissing: 'SMTP is missing host/user/password configuration in the environment.',
+        ownerSmtpFail: 'Test email could not be sent. Check the SMTP technical details.',
+        ownerSmtpLocalOnly: 'This test is only available on localhost or local environments.',
       },
     };
 
     let currentLang = 'es';
     const statusEl = document.getElementById('status');
-    const setStatus = (text) => { statusEl.textContent = text; };
+    const ownerSmtpStatusEl = document.getElementById('ownerSmtpStatus');
+    let ownerSmtpStatusKey = 'ownerSmtpIdle';
+    let ownerSmtpStatusDetails = '';
+    const setStatus = (text, { html = false } = {}) => {
+      if (html) {
+        statusEl.innerHTML = text;
+      } else {
+        statusEl.textContent = text;
+      }
+    };
+    const setOwnerSmtpStatus = (key, details = '') => {
+      ownerSmtpStatusKey = key;
+      ownerSmtpStatusDetails = String(details || '');
+      const base = translateText(ownerSmtpStatusKey);
+      if (!ownerSmtpStatusDetails) {
+        ownerSmtpStatusEl.textContent = base;
+      } else {
+        ownerSmtpStatusEl.innerHTML = base + '<div style="margin-top:8px;color:#4b4037;font-size:12px;white-space:pre-wrap;word-break:break-word">' + ownerSmtpStatusDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+      }
+    };
     const translateText = (key) => (TRANSLATIONS[currentLang]?.[key] || '');
 
     function applyLanguage(lang) {
@@ -254,6 +300,7 @@ function html(nextPath = '/area-cliente') {
       if (!statusEl.dataset.locked) {
         setStatus(translateText('idleStatus'));
       }
+      setOwnerSmtpStatus(ownerSmtpStatusKey, ownerSmtpStatusDetails);
     }
 
     const browserLang = (navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'es';
@@ -335,11 +382,54 @@ function html(nextPath = '/area-cliente') {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ next: nextPath }),
       });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (payload.localFallback && payload.signInUrl) {
+          const safeUrl = String(payload.signInUrl).replace(/"/g, '&quot;');
+          setStatus(
+            '<strong>' + translateText('ownerFallbackTitle') + '</strong> ' +
+            '<a style="color:#6f4d2d;font-weight:900;margin-left:8px" href="' + safeUrl + '">' + translateText('ownerFallbackLink') + '</a> ' +
+            '<span style="display:block;color:#6a5b4d;font-size:13px;margin-top:6px">Caduca en ' + (Number(payload.expiresInMinutes) || 20) + ' minutos y solo funciona en local.</span>',
+            { html: true },
+          );
+          return;
+        }
         setStatus(translateText('ownerFailed'));
         return;
       }
       setStatus(translateText('ownerSent'));
+    });
+
+    document.getElementById('owner-smtp-test')?.addEventListener('click', async () => {
+      setOwnerSmtpStatus('ownerSmtpChecking');
+      try {
+        const response = await fetch('/api/owner-smtp-test', { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (payload.error === 'LOCALHOST_ONLY') {
+          setOwnerSmtpStatus('ownerSmtpLocalOnly');
+          return;
+        }
+        if (payload.error === 'SMTP_NOT_CONFIGURED') {
+          setOwnerSmtpStatus('ownerSmtpConfigMissing');
+          return;
+        }
+        if (!response.ok) {
+          const details = payload?.error ? (typeof payload.error === 'string' ? payload.error : JSON.stringify(payload.error)) : translateText('ownerSmtpFail');
+          setOwnerSmtpStatus('ownerSmtpFail', details);
+          return;
+        }
+        if (payload.ok && payload.sendOk) {
+          const details = payload?.to ? ('Destinatario: ' + payload.to) : '';
+          setOwnerSmtpStatus('ownerSmtpOk', details);
+          return;
+        }
+        const parts = [];
+        if (!payload.verifyOk) parts.push('SMTP verify: ' + (payload?.verifyError?.message || 'fallo'));
+        if (!payload.sendOk) parts.push('SMTP send: ' + (payload?.sendError?.message || 'fallo'));
+        setOwnerSmtpStatus('ownerSmtpFail', parts.join('\n') || translateText('ownerSmtpFail'));
+      } catch (err) {
+        setOwnerSmtpStatus('ownerSmtpFail', err?.message || String(err));
+      }
     });
   </script>
 </body>

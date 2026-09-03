@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createOwnerLoginToken } from '../../../lib/access-session.js';
-import { sendOwnerSignInEmail } from '../../../lib/access-mailer.js';
 import { ownerEmail } from '../../../lib/owner-access.js';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 function sanitizeNextPath(value) {
   const nextPath = String(value || '/base-clientes').trim();
@@ -27,26 +28,38 @@ function isLocalRequest(request) {
   return process.env.NODE_ENV !== 'production';
 }
 
-export async function POST(request) {
-  const body = await request.json().catch(() => ({}));
-  const nextPath = sanitizeNextPath(body?.next || '/base-clientes');
+export async function GET(request) {
+  if (!isLocalRequest(request)) {
+    return NextResponse.json({ ok: false, error: 'LOCALHOST_ONLY' }, { status: 403 });
+  }
   const email = ownerEmail();
+  const nextPath = sanitizeNextPath(new URL(request.url).searchParams.get('next') || '/base-clientes');
   const token = await createOwnerLoginToken({ email, next: nextPath });
   const origin = new URL(request.url).origin;
   const signInUrl = `${origin}/api/owner-access-verify?token=${encodeURIComponent(token)}`;
-  const localFallback = isLocalRequest(request);
 
   try {
-    await sendOwnerSignInEmail({ signInUrl });
-    return NextResponse.json({ ok: true, emailSent: true, localFallback: false });
-  } catch (error) {
-    return NextResponse.json({
-      ok: false,
-      error: error instanceof Error ? error.message : 'OWNER_EMAIL_SEND_FAILED',
-      emailSent: false,
-      localFallback,
-      signInUrl: localFallback ? signInUrl : null,
-      expiresInMinutes: 20,
-    }, { status: 500 });
-  }
+    const dataDir = path.join(process.cwd(), 'data');
+    await writeFile(
+      path.join(dataDir, 'owner-local-link.txt'),
+      [
+        `Enlace local del propietario generado el: ${new Date().toISOString()}`,
+        `Owner: ${email}`,
+        `Destino: ${nextPath}`,
+        '',
+        signInUrl,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+  } catch {}
+
+  return NextResponse.json({
+    ok: true,
+    owner: email,
+    next: nextPath,
+    signInUrl,
+    expiresInMinutes: 20,
+    note: 'Copia y abre este enlace directamente en tu navegador. Es solo para uso local y caduca en 20 minutos.',
+  });
 }
