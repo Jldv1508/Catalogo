@@ -53,7 +53,6 @@ function html(nextPath = '/area-cliente') {
     button.secondary{background:#efe5da;color:#2d241d;border:1px solid #d8cdbf}
     .helper{padding:14px 16px;border-radius:16px;background:#faf5ee;border:1px solid #eaded1;color:#5f4e3f;font-size:13px}
     .note{padding:14px 16px;border-radius:16px;background:#f6efe8;border:1px solid #e6d8c9;min-height:54px;display:flex;align-items:center}
-    .footer-note{padding:16px 18px;border-radius:20px;background:#fff;border:1px solid #e0d6ca;color:#6a5b4d;font-size:14px;box-shadow:0 10px 30px rgba(59,39,21,.05)}
     .owner-panel{background:#fff;border:1px solid #e0d6ca;border-radius:24px;box-shadow:0 16px 44px rgba(59,39,21,.08);padding:24px;display:grid;gap:16px}
     .owner-panel[hidden]{display:none}
     .owner-actions{display:flex;flex-wrap:wrap;gap:10px}
@@ -149,7 +148,6 @@ function html(nextPath = '/area-cliente') {
         <div class="helper" data-i18n="ownerHelper">Este acceso solo funciona mediante un enlace seguro y queda oculto para clientes.</div>
       </section>
       <div id="status" class="note">Esperando acción.</div>
-      <div class="footer-note" data-i18n="footerNote">Si compartes esta página con clientes internacionales, pueden cambiar a inglés desde arriba.</div>
     </section>
   </main>
   <script>
