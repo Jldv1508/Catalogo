@@ -1,8 +1,11 @@
 const STORAGE_KEY = 'jldv1508EditUnlocked';
 const PUBLIC_STORE_FALLBACK = `${STORAGE_KEY}:public-store`;
 const SERVER_STATE_URL = '/api/catalogo-edicion';
-const AUTO_BACKUP_INTERVAL_MS = 5 * 60 * 1000;
-const AUTO_BACKUP_LIMIT = 12;
+const AUTO_BACKUP_INTERVAL_MS = 4 * 60 * 1000;
+const AUTO_BACKUP_LIMIT = 96;
+const MANUAL_BACKUP_LIMIT = 60;
+const SNAPSHOT_RETENTION_AUTO_MS = 30 * 24 * 60 * 60 * 1000;
+const SNAPSHOT_RETENTION_MANUAL_MS = 180 * 24 * 60 * 60 * 1000;
 const STATUS_OPTIONS = {
   disponible: 'Disponible',
   reservado: 'Reservado',
@@ -29,9 +32,14 @@ let state = {
   publicKey: '',
   catalogUrl: '',
   lastAutoBackupAt: '',
+  snapshots: {
+    auto: [],
+    manual: [],
+  },
 };
 let autoBackupTimer = null;
 let lastAutoBackupSignature = '';
+let lastSnapshotChecksum = '';
 let openCardEditors = new Set();
 let serverSaveTimer = null;
 let serverSavePromise = null;
@@ -49,8 +57,11 @@ function createDraftItem() {
     medidas: '',
     type: 'PIE',
     submodel: '',
+    submodelIds: [],
     material: '000',
+    materialIds: ['000'],
     color: '000',
+    colorIds: ['000'],
     unit: '001',
     price: '',
     stock: '1',
@@ -142,6 +153,508 @@ function currentAutoBackupKey() {
   return `${state.publicKey || currentPublicKey() || PUBLIC_STORE_FALLBACK}:auto-backups`;
 }
 
+function currentSnapshotIndexKey(kind = 'all') {
+  const base = `${state.publicKey || currentPublicKey() || PUBLIC_STORE_FALLBACK}:snapshots`;
+  return kind === 'all' ? base : `${base}:${kind}`;
+}
+
+function currentSnapshotPayloadKey(id) {
+  return `${state.publicKey || currentPublicKey() || PUBLIC_STORE_FALLBACK}:snapshots:${id}`;
+}
+
+function snapshotChecksum32(text) {
+  let h1 = 0x811c9dc5;
+  let h2 = 0xdeadbeef;
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x85ebca77);
+  }
+  h1 = (h1 ^ (h1 >>> 16)) >>> 0;
+  h2 = (h2 ^ (h2 >>> 13)) >>> 0;
+  const out = (h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0'));
+  return out;
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!n || n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatDateLocal(iso) {
+  if (!iso) return 'sin fecha';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(+d)) return String(iso);
+    return d.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return String(iso);
+  }
+}
+
+function snapshotRetentionLimitFor(kind) {
+  return kind === 'auto' ? AUTO_BACKUP_LIMIT : MANUAL_BACKUP_LIMIT;
+}
+
+function snapshotRetentionMsFor(kind) {
+  return kind === 'auto' ? SNAPSHOT_RETENTION_AUTO_MS : SNAPSHOT_RETENTION_MANUAL_MS;
+}
+
+function readSnapshotIndex() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(currentSnapshotIndexKey()) || '{"auto":[],"manual":[]}');
+    return {
+      auto: Array.isArray(raw?.auto) ? raw.auto.filter(Boolean) : [],
+      manual: Array.isArray(raw?.manual) ? raw.manual.filter(Boolean) : [],
+    };
+  } catch {
+    return { auto: [], manual: [] };
+  }
+}
+
+function writeSnapshotIndex(index) {
+  const safe = {
+    auto: Array.isArray(index?.auto) ? index.auto : [],
+    manual: Array.isArray(index?.manual) ? index.manual : [],
+  };
+  localStorage.setItem(currentSnapshotIndexKey(), JSON.stringify(safe));
+  state.snapshots = safe;
+  return safe;
+}
+
+function removeSnapshotPayload(id) {
+  if (!id) return;
+  try {
+    localStorage.removeItem(currentSnapshotPayloadKey(id));
+  } catch {}
+}
+
+function readSnapshotPayload(id) {
+  if (!id) return null;
+  try {
+    const raw = localStorage.getItem(currentSnapshotPayloadKey(id));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshotPayload(id, payload) {
+  if (!id) return false;
+  try {
+    localStorage.setItem(currentSnapshotPayloadKey(id), JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function snapshotSummaryFromPayload(meta, payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const tables = payload?.tables || {};
+  return {
+    itemsCount: items.length,
+    tablesCount: Object.keys(tables).reduce((acc, k) => acc + Object.keys(tables[k] || {}).length, 0),
+    tablesRows: {
+      types: Object.keys(tables?.types || {}).length,
+      submodels: Object.keys(tables?.submodels || {}).length,
+      materials: Object.keys(tables?.materials || {}).length,
+      colors: Object.keys(tables?.colors || {}).length,
+    },
+    sampleCodes: items.slice(0, 5).map(item => code(item)),
+    kind: meta?.kind || 'auto',
+  };
+}
+
+function createSnapshot({ kind = 'auto', reason = '', name = '', tag = '', extra = {} } = {}) {
+  const payload = {
+    items: state.items,
+    tables: state.tables,
+    filters: state.filters,
+    updatedAt: new Date().toISOString(),
+  };
+  const jsonForChecksum = JSON.stringify(payload);
+  const checksum = snapshotChecksum32(jsonForChecksum);
+  const bytes = new Blob([jsonForChecksum]).size;
+  const id = `${kind}-${Date.now().toString(36)}-${checksum.slice(0, 6)}`;
+  const savedAt = new Date().toISOString();
+  const meta = {
+    id,
+    kind,
+    savedAt,
+    reason: String(reason || ''),
+    name: String(name || '').trim(),
+    tag: String(tag || '').trim(),
+    checksum,
+    bytes,
+    payloadSize: bytes,
+    itemsCount: Array.isArray(payload.items) ? payload.items.length : 0,
+    ...snapshotSummaryFromPayload({ kind }, payload),
+    extra: extra || {},
+  };
+  const ok = writeSnapshotPayload(id, {
+    __snapshotMeta: meta,
+    items: payload.items,
+    tables: payload.tables,
+    filters: payload.filters,
+    updatedAt: payload.updatedAt,
+  });
+  if (!ok) return null;
+  const index = readSnapshotIndex();
+  const list = index[kind] || [];
+  list.unshift(meta);
+  index[kind] = list;
+  writeSnapshotIndex(index);
+  return meta;
+}
+
+function getSnapshotById(id) {
+  const index = readSnapshotIndex();
+  const all = [...(index.auto || []), ...(index.manual || [])];
+  const meta = all.find(entry => entry?.id === id);
+  if (!meta) return null;
+  const payload = readSnapshotPayload(id);
+  return { meta, payload };
+}
+
+function deleteSnapshotById(id, { silent = false } = {}) {
+  if (!id) return false;
+  const index = readSnapshotIndex();
+  let removed = false;
+  ['auto', 'manual'].forEach(kind => {
+    const before = (index[kind] || []).length;
+    index[kind] = (index[kind] || []).filter(entry => entry?.id !== id);
+    if (index[kind].length !== before) removed = true;
+  });
+  writeSnapshotIndex(index);
+  removeSnapshotPayload(id);
+  if (!silent) renderWorkspace();
+  return removed;
+}
+
+function purgeOldSnapshots() {
+  const now = Date.now();
+  const index = readSnapshotIndex();
+  ['auto', 'manual'].forEach(kind => {
+    const limit = snapshotRetentionLimitFor(kind);
+    const retentionMs = snapshotRetentionMsFor(kind);
+    const list = (index[kind] || []).filter(entry => {
+      if (!entry?.id || !entry?.savedAt) return false;
+      const t = Date.parse(entry.savedAt);
+      if (!Number.isFinite(t)) return false;
+      return (now - t) <= retentionMs;
+    });
+    while (list.length > limit) {
+      const drop = list.pop();
+      if (drop?.id) removeSnapshotPayload(drop.id);
+    }
+    index[kind] = list;
+  });
+  writeSnapshotIndex(index);
+  return index;
+}
+
+function clearAutoBackupsLegacy() {
+  try {
+    const legacyKey = currentAutoBackupKey();
+    if (legacyKey) localStorage.removeItem(legacyKey);
+  } catch {}
+}
+
+function migrateLegacyAutoBackups() {
+  try {
+    const raw = localStorage.getItem(currentAutoBackupKey());
+    if (!raw) return 0;
+    const entries = JSON.parse(raw);
+    if (!Array.isArray(entries)) {
+      clearAutoBackupsLegacy();
+      return 0;
+    }
+    let migrated = 0;
+    entries.forEach(entry => {
+      if (!entry?.payload || !Array.isArray(entry.payload?.items)) return;
+      const payload = entry.payload;
+      const jsonForChecksum = JSON.stringify({ items: payload.items, tables: payload.tables || {}, filters: payload.filters || {}, updatedAt: entry.savedAt || new Date().toISOString() });
+      const checksum = snapshotChecksum32(jsonForChecksum);
+      const id = `auto-mig-${Date.now().toString(36)}-${migrated}-${checksum.slice(0, 5)}`;
+      const bytes = new Blob([jsonForChecksum]).size;
+      const meta = {
+        id,
+        kind: 'auto',
+        savedAt: entry.savedAt || new Date().toISOString(),
+        reason: `migrated:${entry.reason || 'legacy'}`,
+        name: '',
+        tag: 'migrado',
+        checksum,
+        bytes,
+        payloadSize: bytes,
+        itemsCount: Array.isArray(payload.items) ? payload.items.length : 0,
+        ...snapshotSummaryFromPayload({ kind: 'auto' }, payload),
+        extra: { migrated: true },
+      };
+      const ok = writeSnapshotPayload(id, {
+        __snapshotMeta: meta,
+        items: payload.items,
+        tables: payload.tables || {},
+        filters: payload.filters || {},
+        updatedAt: entry.savedAt || new Date().toISOString(),
+      });
+      if (ok) {
+        const index = readSnapshotIndex();
+        index.auto.unshift(meta);
+        writeSnapshotIndex(index);
+        migrated += 1;
+      }
+    });
+    clearAutoBackupsLegacy();
+    return migrated;
+  } catch {
+    clearAutoBackupsLegacy();
+    return 0;
+  }
+}
+
+function renameSnapshot(id, nextName) {
+  if (!id) return false;
+  const index = readSnapshotIndex();
+  let updated = false;
+  ['auto', 'manual'].forEach(kind => {
+    index[kind] = (index[kind] || []).map(entry => {
+      if (entry?.id !== id) return entry;
+      updated = true;
+      return { ...entry, name: String(nextName || '').trim() };
+    });
+  });
+  if (updated) writeSnapshotIndex(index);
+  return updated;
+}
+
+function promoteSnapshotToManual(id, name = '') {
+  if (!id) return false;
+  const index = readSnapshotIndex();
+  const pos = (index.auto || []).findIndex(entry => entry?.id === id);
+  if (pos === -1) return false;
+  const entry = index.auto[pos];
+  index.auto.splice(pos, 1);
+  const promoted = { ...entry, kind: 'manual', name: String(name || entry.name || '').trim() || 'Promovido desde automático' };
+  index.manual.unshift(promoted);
+  writeSnapshotIndex(index);
+  return true;
+}
+
+function downloadSnapshot(id, { format = 'json' } = {}) {
+  const wrap = getSnapshotById(id);
+  if (!wrap?.payload) return false;
+  const savedAt = wrap.meta?.savedAt || new Date().toISOString();
+  const stamp = savedAt.replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  const tag = (wrap.meta?.kind || 'auto') === 'manual' ? 'manual' : 'auto';
+  const payload = {
+    ...wrap.payload,
+    __snapshotMeta: wrap.meta,
+    exportedAt: new Date().toISOString(),
+    integrity: {
+      checksum: wrap.meta?.checksum || '',
+      algorithm: 'fnv1a-64trunc',
+      bytes: wrap.meta?.bytes || new Blob([JSON.stringify(wrap.payload)]).size,
+    },
+  };
+  const name = `jldv1508-snapshot-${tag}-${stamp}.${format === 'md' ? 'manifest.json' : 'json'}`;
+  download(name, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  return true;
+}
+
+function downloadAllSnapshots() {
+  const index = readSnapshotIndex();
+  const list = [...(index.manual || []), ...(index.auto || [])];
+  const packages = list.map(meta => {
+    const payload = readSnapshotPayload(meta.id);
+    return {
+      meta,
+      payload,
+      payloadSize: payload ? new Blob([JSON.stringify(payload)]).size : 0,
+      payloadChecksum: payload ? snapshotChecksum32(JSON.stringify(payload)) : null,
+    };
+  });
+  const manifest = {
+    generatedAt: new Date().toISOString(),
+    snapshots: packages.map(p => ({
+      id: p.meta?.id,
+      kind: p.meta?.kind,
+      savedAt: p.meta?.savedAt,
+      name: p.meta?.name,
+      tag: p.meta?.tag,
+      itemsCount: p.meta?.itemsCount,
+      checksum: p.meta?.checksum,
+      bytes: p.meta?.bytes,
+      payloadChecksum: p.payloadChecksum,
+      payloadSize: p.payloadSize,
+    })),
+    totals: {
+      auto: (index.auto || []).length,
+      manual: (index.manual || []).length,
+      bytes: packages.reduce((acc, p) => acc + (p.payloadSize || 0), 0),
+    },
+  };
+  const bundle = { manifest, snapshots: packages };
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  download(`jldv1508-snapshots-bundle-${stamp}.json`, JSON.stringify(bundle, null, 2), 'application/json;charset=utf-8');
+  return true;
+}
+
+function verifyAllSnapshots() {
+  const index = readSnapshotIndex();
+  const report = { ok: 0, corrupt: 0, missing: 0, details: [] };
+  [...(index.auto || []), ...(index.manual || [])].forEach(meta => {
+    if (!meta?.id) return;
+    const payload = readSnapshotPayload(meta.id);
+    if (!payload) {
+      report.missing += 1;
+      report.details.push({ id: meta.id, savedAt: meta.savedAt, verdict: 'missing' });
+      return;
+    }
+    const payloadCopy = { items: payload.items, tables: payload.tables || {}, filters: payload.filters || {}, updatedAt: payload.updatedAt };
+    const checksum = snapshotChecksum32(JSON.stringify(payloadCopy));
+    if (checksum !== meta.checksum) {
+      report.corrupt += 1;
+      report.details.push({ id: meta.id, savedAt: meta.savedAt, verdict: 'corrupt', expected: meta.checksum, got: checksum });
+      return;
+    }
+    report.ok += 1;
+    report.details.push({ id: meta.id, savedAt: meta.savedAt, verdict: 'ok' });
+  });
+  return report;
+}
+
+function restoreSnapshotById(id, { dryRun = false } = {}) {
+  const wrap = getSnapshotById(id);
+  const payload = wrap?.payload;
+  if (!Array.isArray(payload?.items)) return { ok: false, reason: 'payload' };
+  const payloadCopy = { items: payload.items, tables: payload.tables || {}, filters: payload.filters || {}, updatedAt: payload.updatedAt };
+  const checksum = snapshotChecksum32(JSON.stringify(payloadCopy));
+  if (wrap.meta?.checksum && wrap.meta.checksum !== checksum) {
+    return { ok: false, reason: 'checksum', expected: wrap.meta.checksum, got: checksum };
+  }
+  if (dryRun) {
+    return { ok: true, dryRun: true, itemsCount: payload.items.length, meta: wrap.meta };
+  }
+  state.items = payload.items.map(baseItem);
+  openCardEditors.clear();
+  state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
+  state.filters = {
+    q: String(payload.filters?.q || ''),
+    type: Array.isArray(payload.filters?.type) ? payload.filters.type : [],
+    submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel : [],
+    material: Array.isArray(payload.filters?.material) ? payload.filters.material : [],
+    color: Array.isArray(payload.filters?.color) ? payload.filters.color : [],
+    priceMin: String(payload.filters?.priceMin || ''),
+    priceMax: String(payload.filters?.priceMax || ''),
+  };
+  state.items.forEach(syncPieceName);
+  state.selected.clear();
+  state.selectionAnchor = -1;
+  lastSnapshotChecksum = checksum;
+  savePublicPayload({ reason: `restore-snapshot:${id}` });
+  renderWorkspace();
+  return { ok: true, itemsCount: payload.items.length, meta: wrap.meta };
+}
+
+function importSnapshotJsonFile(file) {
+  if (!file) return Promise.resolve({ ok: false, reason: 'file' });
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || ''));
+        const items = Array.isArray(parsed) ? parsed : (parsed?.snapshots ? null : parsed.items);
+        if (parsed?.snapshots && Array.isArray(parsed.snapshots)) {
+          const list = parsed.snapshots;
+          let imported = 0;
+          list.forEach(entry => {
+            const innerMeta = entry?.meta || entry;
+            const innerPayload = entry?.payload || entry;
+            if (!Array.isArray(innerPayload?.items)) return;
+            const clean = { items: innerPayload.items, tables: innerPayload.tables || {}, filters: innerPayload.filters || {}, updatedAt: innerMeta?.savedAt || innerPayload.updatedAt || new Date().toISOString() };
+            const checksum = snapshotChecksum32(JSON.stringify(clean));
+            const id = `manual-imp-${Date.now().toString(36)}-${imported}-${checksum.slice(0, 5)}`;
+            const bytes = new Blob([JSON.stringify(clean)]).size;
+            const meta = {
+              id,
+              kind: 'manual',
+              savedAt: innerMeta?.savedAt || new Date().toISOString(),
+              reason: `imported:${innerMeta?.reason || file.name}`,
+              name: String(innerMeta?.name || parsed?.manifest?.generatedAt ? `Importado ${formatDateLocal(innerMeta?.savedAt)}` : innerMeta?.name || '').trim() || `Importado de ${file.name}`,
+              tag: innerMeta?.tag || 'importado',
+              checksum,
+              bytes,
+              payloadSize: bytes,
+              itemsCount: clean.items.length,
+              ...snapshotSummaryFromPayload({ kind: 'manual' }, clean),
+              extra: { importedFrom: file.name, importedAt: new Date().toISOString() },
+            };
+            const ok = writeSnapshotPayload(id, {
+              __snapshotMeta: meta,
+              items: clean.items,
+              tables: clean.tables,
+              filters: clean.filters,
+              updatedAt: clean.updatedAt,
+            });
+            if (ok) {
+              const index = readSnapshotIndex();
+              index.manual.unshift(meta);
+              writeSnapshotIndex(index);
+              imported += 1;
+            }
+          });
+          resolve({ ok: imported > 0, imported, reason: imported ? '' : 'no-snapshots' });
+          return;
+        }
+        if (!Array.isArray(items)) {
+          resolve({ ok: false, reason: 'items' });
+          return;
+        }
+        const clean = { items, tables: (parsed?.tables || state.tables || DEFAULT_TABLES), filters: parsed?.filters || state.filters || {}, updatedAt: parsed?.updatedAt || parsed?.exportedAt || new Date().toISOString() };
+        const checksum = snapshotChecksum32(JSON.stringify(clean));
+        const id = `manual-imp-${Date.now().toString(36)}-s-${checksum.slice(0, 5)}`;
+        const bytes = new Blob([JSON.stringify(clean)]).size;
+        const meta = {
+          id,
+          kind: 'manual',
+          savedAt: clean.updatedAt,
+          reason: `imported-file:${file.name}`,
+          name: `Importado ${formatDateLocal(clean.updatedAt)}`,
+          tag: 'importado',
+          checksum,
+          bytes,
+          payloadSize: bytes,
+          itemsCount: clean.items.length,
+          ...snapshotSummaryFromPayload({ kind: 'manual' }, clean),
+          extra: { importedFrom: file.name },
+        };
+        const ok = writeSnapshotPayload(id, {
+          __snapshotMeta: meta,
+          items: clean.items,
+          tables: clean.tables,
+          filters: clean.filters,
+          updatedAt: clean.updatedAt,
+        });
+        if (ok) {
+          const index = readSnapshotIndex();
+          index.manual.unshift(meta);
+          writeSnapshotIndex(index);
+        }
+        resolve({ ok, imported: ok ? 1 : 0 });
+      } catch (err) {
+        resolve({ ok: false, reason: 'parse', error: err?.message || String(err) });
+      }
+    });
+    reader.readAsText(file);
+  });
+}
+
 function tablesFor(kind) {
   return state.tables[kind] || DEFAULT_TABLES[kind] || {};
 }
@@ -160,6 +673,56 @@ function itemSubmodel(item) {
 
 function itemColor(item) {
   return item.color || '000';
+}
+
+function normalizeIdArray(value, fallback) {
+  if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+  const arr = String(value || '').split(',').map(v => v.trim()).filter(Boolean);
+  if (fallback && !arr.length) return [fallback];
+  return arr;
+}
+
+function itemMaterials(item) {
+  const arr = normalizeIdArray(item?.materialIds, itemMaterial(item));
+  if (!arr.includes(itemMaterial(item))) arr.unshift(itemMaterial(item));
+  return [...new Set(arr)];
+}
+
+function itemColors(item) {
+  const arr = normalizeIdArray(item?.colorIds, itemColor(item));
+  if (!arr.includes(itemColor(item))) arr.unshift(itemColor(item));
+  return [...new Set(arr)];
+}
+
+function itemSubmodels(item) {
+  const base = itemSubmodel(item);
+  const arr = normalizeIdArray(item?.submodelIds, base);
+  if (base && !arr.includes(base)) arr.unshift(base);
+  return [...new Set(arr)];
+}
+
+function syncMultiPrimaryFromArray(item, kind) {
+  if (!item) return;
+  if (kind === 'material') {
+    const ids = normalizeIdArray(item.materialIds);
+    if (!ids.includes(itemMaterial(item))) item.material = ids[0] || itemMaterial(item) || '000';
+    if (!item.materialIds?.length) item.materialIds = [itemMaterial(item)];
+  } else if (kind === 'color') {
+    const ids = normalizeIdArray(item.colorIds);
+    if (!ids.includes(itemColor(item))) item.color = ids[0] || itemColor(item) || '000';
+    if (!item.colorIds?.length) item.colorIds = [itemColor(item)];
+  } else if (kind === 'submodel') {
+    const ids = normalizeIdArray(item.submodelIds);
+    if (!ids.includes(itemSubmodel(item))) item.submodel = ids[0] || itemSubmodel(item) || '';
+    if (item.submodelo !== item.submodel) item.submodelo = item.submodel;
+    if (!item.submodelIds?.length) item.submodelIds = [itemSubmodel(item)].filter(Boolean);
+  }
+}
+
+function syncMultiPrimary(item) {
+  syncMultiPrimaryFromArray(item, 'material');
+  syncMultiPrimaryFromArray(item, 'color');
+  syncMultiPrimaryFromArray(item, 'submodel');
 }
 
 function itemUnit(item) {
@@ -307,7 +870,7 @@ function baseItem(item) {
   const color = normalizeTableCode(item.color, 3) || '000';
   const submodel = normalizeTableCode(item.submodel || item.submodelo, 3);
   const unit = normalizeTableCode(item.unit, 3) || '001';
-  return {
+  const base = {
     ...item,
     type: item.type || item.tipo || 'PIE',
     submodel,
@@ -322,6 +885,14 @@ function baseItem(item) {
     image_y: Number.isFinite(Number(item.image_y ?? item.imageY)) ? Number(item.image_y ?? item.imageY) : 50,
     image_zoom: Number.isFinite(Number(item.image_zoom ?? item.imageZoom)) ? Number(item.image_zoom ?? item.imageZoom) : 1,
   };
+  const materialIds = normalizeIdArray(item.materialIds, material).map(v => normalizeTableCode(v, 3) || '000');
+  const colorIds = normalizeIdArray(item.colorIds, color).map(v => normalizeTableCode(v, 3) || '000');
+  const submodelIds = normalizeIdArray(item.submodelIds, submodel).map(v => normalizeTableCode(v, 3)).filter(Boolean);
+  base.materialIds = materialIds.includes(material) ? materialIds : [material, ...materialIds];
+  base.colorIds = colorIds.includes(color) ? colorIds : [color, ...colorIds];
+  base.submodelIds = !submodel ? submodelIds : (submodelIds.includes(submodel) ? submodelIds : [submodel, ...submodelIds]);
+  syncMultiPrimary(base);
+  return base;
 }
 
 function loadPublicPayload() {
@@ -447,84 +1018,84 @@ function currentSnapshotSignature() {
   });
 }
 
-function readAutoBackups() {
+function legacySignature(signature) {
   try {
-    const raw = JSON.parse(localStorage.getItem(currentAutoBackupKey()) || '[]');
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
+    const parsed = JSON.parse(String(signature || ''));
+    if (parsed?.items && parsed?.tables) return snapshotChecksum32(JSON.stringify(parsed));
+  } catch {}
+  return '';
+}
+
+function readAutoBackups() {
+  return [...(readSnapshotIndex().auto || [])].map(meta => ({
+    savedAt: meta.savedAt,
+    reason: meta.reason,
+    signature: meta.checksum,
+    payloadStoredSeparately: true,
+    payloadRef: meta.id,
+    itemsCount: meta.itemsCount,
+    meta,
+  }));
 }
 
 function syncAutoBackupState() {
-  const backups = readAutoBackups();
+  try {
+    const migrated = migrateLegacyAutoBackups();
+    if (migrated > 0 && typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        const st = document.querySelector('[data-auto-backup-status]');
+        if (st) st.textContent = `Se migraron ${migrated} respaldos antiguos al nuevo sistema. ${st.textContent || ''}`;
+      }, 300);
+    }
+  } catch {}
+  purgeOldSnapshots();
+  const backups = readSnapshotIndex().auto || [];
   state.lastAutoBackupAt = backups[0]?.savedAt || '';
-  lastAutoBackupSignature = backups[0]?.signature || '';
+  lastAutoBackupSignature = backups[0]?.checksum || '';
+  state.snapshots = readSnapshotIndex();
 }
 
 function renderAutoBackupStatus() {
   const status = document.querySelector('[data-auto-backup-status]');
   if (!status) return;
-  const backups = readAutoBackups();
-  const localText = backups.length
-    ? `Autorespaldo local cada 5 min. Último: ${backups[0]?.savedAt ? new Date(backups[0].savedAt).toLocaleString('es-ES') : 'sin fecha'}. Historial: ${backups.length}.`
-    : 'Autorespaldo local cada 5 min. Aún no hay respaldos automáticos.';
+  const index = readSnapshotIndex();
+  const auto = index.auto || [];
+  const manual = index.manual || [];
+  const intervalMin = Math.round(AUTO_BACKUP_INTERVAL_MS / 60000);
+  const totalBytes = [...auto, ...manual].reduce((acc, m) => acc + (m?.bytes || 0), 0);
+  const localText = auto.length
+    ? `Autorespaldo cada ${intervalMin} min. Último: ${formatDateLocal(auto[0]?.savedAt)}. Automáticos: ${auto.length} · Manuales: ${manual.length} · ${formatBytes(totalBytes)}.`
+    : `Autorespaldo cada ${intervalMin} min. Aún no hay respaldos automáticos (hay ${manual.length} manuales).`;
   const serverText = lastServerSaveError
     ? lastServerSaveError
     : lastServerSavedAt
-      ? `Guardado en disco: ${new Date(lastServerSavedAt).toLocaleString('es-ES')}.`
+      ? `Guardado en disco: ${formatDateLocal(lastServerSavedAt)}.`
       : 'Guardado en disco pendiente.';
   status.textContent = `${localText} ${serverText}`;
 }
 
 function saveAutomaticBackup(reason = 'interval') {
+  purgeOldSnapshots();
   const signature = currentSnapshotSignature();
-  if (!signature || signature === lastAutoBackupSignature) {
+  const checksum = snapshotChecksum32(signature);
+  if (!signature || checksum === lastAutoBackupSignature) {
     renderAutoBackupStatus();
     return false;
   }
-  const savedAt = new Date().toISOString();
-  const backups = readAutoBackups().filter(entry => entry?.signature !== signature);
-  backups.unshift({
-    savedAt,
-    reason,
-    signature,
-    payload: {
-      items: state.items,
-      tables: state.tables,
-      filters: state.filters,
-    },
-  });
-  localStorage.setItem(currentAutoBackupKey(), JSON.stringify(backups.slice(0, AUTO_BACKUP_LIMIT)));
-  state.lastAutoBackupAt = savedAt;
-  lastAutoBackupSignature = signature;
+  const meta = createSnapshot({ kind: 'auto', reason });
+  if (!meta) return false;
+  state.lastAutoBackupAt = meta.savedAt;
+  lastAutoBackupSignature = meta.checksum;
+  lastSnapshotChecksum = meta.checksum;
   renderAutoBackupStatus();
   return true;
 }
 
 function restoreLatestAutoBackup() {
-  const backup = readAutoBackups()[0];
-  const payload = backup?.payload;
-  if (!Array.isArray(payload?.items)) return false;
-  state.items = payload.items.map(baseItem);
-  openCardEditors.clear();
-  state.tables = mergeTables(payload.tables || DEFAULT_TABLES);
-  state.filters = {
-    q: String(payload.filters?.q || ''),
-    type: Array.isArray(payload.filters?.type) ? payload.filters.type : [],
-    submodel: Array.isArray(payload.filters?.submodel) ? payload.filters.submodel : [],
-    material: Array.isArray(payload.filters?.material) ? payload.filters.material : [],
-    color: Array.isArray(payload.filters?.color) ? payload.filters.color : [],
-    priceMin: String(payload.filters?.priceMin || ''),
-    priceMax: String(payload.filters?.priceMax || ''),
-  };
-  state.selected.clear();
-  state.selectionAnchor = -1;
-  state.lastAutoBackupAt = backup.savedAt || '';
-  lastAutoBackupSignature = backup.signature || currentSnapshotSignature();
-  savePublicPayload({ reason: 'restore-local-backup' });
-  renderWorkspace();
-  return true;
+  const first = (readSnapshotIndex().auto || [])[0];
+  if (!first) return false;
+  const result = restoreSnapshotById(first.id);
+  return !!result?.ok;
 }
 
 function startAutoBackupTimer() {
@@ -534,11 +1105,24 @@ function startAutoBackupTimer() {
     if (!state.unlocked) return;
     saveAutomaticBackup('interval');
   }, AUTO_BACKUP_INTERVAL_MS);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        purgeOldSnapshots();
+        state.snapshots = readSnapshotIndex();
+        renderAutoBackupStatus();
+      }
+    });
+  }
   window.addEventListener('pagehide', () => {
     if (!state.unlocked) return;
     saveAutomaticBackup('pagehide');
     queueServerSave('pagehide', true);
   });
+  window.setTimeout(() => {
+    if (!state.unlocked) return;
+    saveAutomaticBackup('session-start');
+  }, 6000);
 }
 
 async function loadEditorState() {
@@ -565,6 +1149,98 @@ async function loadEditorState() {
     queueServerSave('sync-local-to-disk', true);
   }
   syncAutoBackupState();
+}
+
+function snapshotRowHtml(meta, index, kind = 'auto') {
+  if (!meta?.id) return '';
+  const label = meta.name || (kind === 'auto' ? `Automático #${index + 1}` : `Manual #${index + 1}`);
+  const sample = Array.isArray(meta.sampleCodes) ? meta.sampleCodes.slice(0, 3) : [];
+  const tagChip = meta.tag ? `<span class="public-edit-chip public-edit-chip--tag">${escapeHtml(meta.tag)}</span>` : '';
+  const reasonChip = meta.reason ? `<span class="public-edit-chip public-edit-chip--reason" title="${escapeAttr(meta.reason)}">${escapeHtml(meta.reason.slice(0, 24))}</span>` : '';
+  const tablesTitle = `${meta.tablesRows?.types || 0} tipos · ${meta.tablesRows?.submodels || 0} subm · ${meta.tablesRows?.materials || 0} mat · ${meta.tablesRows?.colors || 0} col`;
+  const promoteBtn = kind === 'auto'
+    ? `<button type="button" class="is-link" data-snapshot-promote="${escapeAttr(meta.id)}" title="Guardar como manualmente y mantener más tiempo">★ Guardar como manual</button>`
+    : '';
+  const sampleHtml = sample.length
+    ? `<div class="public-edit-snapshots-sample"><em>Muestra:</em> ${sample.map(c => `<code>${escapeHtml(c)}</code>`).join(' · ')}</div>`
+    : '';
+  return [
+    `<li class="public-edit-snapshots-row" data-snapshot-row data-snapshot-id="${escapeAttr(meta.id)}" data-snapshot-kind="${escapeAttr(kind)}">`,
+    '  <div class="public-edit-snapshots-main">',
+    '    <div class="public-edit-snapshots-title">',
+    `      <strong data-snapshot-label="${escapeAttr(meta.id)}">${escapeHtml(label)}</strong>`,
+    `      ${tagChip} ${reasonChip} ${promoteBtn}`,
+    `      <button type="button" class="is-link" data-snapshot-rename="${escapeAttr(meta.id)}" title="Cambiar nombre">✎</button>`,
+    '    </div>',
+    '    <div class="public-edit-snapshots-meta">',
+    `      <span>${formatDateLocal(meta.savedAt)}</span>`,
+    `      <span>${escapeHtml(String(meta.itemsCount || 0))} piezas</span>`,
+    `      <span title="${escapeAttr(tablesTitle)}">${escapeHtml(String(meta.tablesCount || 0))} filas tablas</span>`,
+    `      <span>${formatBytes(meta.bytes || 0)}</span>`,
+    `      <span class="public-edit-snapshots-checksum" title="${escapeAttr(meta.checksum || '')}">#${escapeHtml(String(meta.checksum || '').slice(0, 10))}</span>`,
+    '    </div>',
+    `    ${sampleHtml}`,
+    '    <div class="public-edit-snapshots-actions">',
+    `      <button type="button" data-snapshot-preview="${escapeAttr(meta.id)}">Ver detalle</button>`,
+    `      <button type="button" data-snapshot-restore="${escapeAttr(meta.id)}">Restaurar</button>`,
+    `      <button type="button" data-snapshot-download="${escapeAttr(meta.id)}">Descargar</button>`,
+    `      <button type="button" class="is-danger" data-snapshot-delete="${escapeAttr(meta.id)}">Borrar</button>`,
+    '    </div>',
+    '  </div>',
+    '</li>',
+  ].join('\n');
+}
+
+function snapshotsPanelHtml() {
+  const index = readSnapshotIndex();
+  const auto = index.auto || [];
+  const manual = index.manual || [];
+  const totalBytes = [...auto, ...manual].reduce((acc, m) => acc + (m?.bytes || 0), 0);
+  const retentionAutoDays = Math.round(SNAPSHOT_RETENTION_AUTO_MS / (24 * 3600 * 1000));
+  const retentionManualDays = Math.round(SNAPSHOT_RETENTION_MANUAL_MS / (24 * 3600 * 1000));
+  const manualListHtml = manual.length
+    ? `<ul>${manual.map((m, i) => snapshotRowHtml(m, i, 'manual')).join('')}</ul>`
+    : `<div class="public-edit-empty-inline">No hay snapshots manuales. Crea uno antes de cambios importantes.</div>`;
+  const autoListHtml = auto.length
+    ? `<ul>${auto.map((m, i) => snapshotRowHtml(m, i, 'auto')).join('')}</ul>`
+    : `<div class="public-edit-empty-inline">Aún no hay snapshots automáticos. Se crea el primero a los ~4 minutos o al cerrar la pestaña.</div>`;
+  const rows = [];
+  rows.push('<div class="public-edit-snapshots" data-snapshots-root>');
+  rows.push('  <div class="public-edit-snapshots-toolbar">');
+  rows.push('    <label>');
+  rows.push('      <span>Nombre del snapshot (opcional)</span>');
+  rows.push('      <input data-snapshot-manual-name placeholder="Ej. Antes de borrar colores 015 a 020" maxlength="120">');
+  rows.push('    </label>');
+  rows.push('    <label>');
+  rows.push('      <span>Etiqueta / tag</span>');
+  rows.push('      <input data-snapshot-manual-tag placeholder="Ej. version-cliente | limpieza-tablas-antes-deploy" maxlength="60">');
+  rows.push('    </label>');
+  rows.push('    <div class="public-edit-snapshots-actions-row">');
+  rows.push('      <button type="button" data-snapshot-create-manual class="is-primary">Crear snapshot AHORA</button>');
+  rows.push('      <button type="button" data-snapshot-verify>Verificar integridad</button>');
+  rows.push('      <button type="button" data-snapshot-download-all>Exportar paquete completo</button>');
+  rows.push('      <button type="button" data-snapshot-purge>Limpiar antiguos (retention)</button>');
+  rows.push('      <label class="public-edit-import-snapshots">');
+  rows.push('        <input type="file" data-snapshot-import-file accept=".json,application/json" hidden>');
+  rows.push('        <button type="button" data-snapshot-import-button>Importar respaldo .json</button>');
+  rows.push('      </label>');
+  rows.push('    </div>');
+  rows.push('  </div>');
+  rows.push('  <div class="public-edit-snapshots-summary">');
+  rows.push(`    <span><strong>${escapeHtml(String(manual.length))}</strong> manuales · <strong>${escapeHtml(String(auto.length))}</strong> automáticos · <strong>${formatBytes(totalBytes)}</strong> totales · retención auto ${retentionAutoDays} días y manual ${retentionManualDays} días.</span>`);
+  rows.push('  </div>');
+  rows.push('  <div class="public-edit-snapshots-report" data-snapshot-report hidden></div>');
+  rows.push('  <nav class="public-edit-snapshots-tabs">');
+  rows.push(`    <button type="button" class="is-primary" data-snapshot-tab="manual" data-snapshot-tab-state="open">Manuales (${manual.length})</button>`);
+  rows.push(`    <button type="button" data-snapshot-tab="auto">Automáticos (${auto.length})</button>`);
+  rows.push('  </nav>');
+  rows.push(`  <section class="public-edit-snapshots-list" data-snapshot-list="manual">${manualListHtml}</section>`);
+  rows.push(`  <section class="public-edit-snapshots-list" data-snapshot-list="auto" hidden>${autoListHtml}</section>`);
+  rows.push('  <dialog class="public-edit-snapshots-modal" data-snapshot-modal hidden>');
+  rows.push('    <div class="public-edit-snapshots-modal-inner" data-snapshot-modal-inner></div>');
+  rows.push('  </dialog>');
+  rows.push('</div>');
+  return rows.join('\n');
 }
 
 async function ensureWorkspace() {
@@ -596,14 +1272,30 @@ function visibleIndexes() {
         const text = [
           item.original, item.codigo, item.idf, code(item), pieceName(item), item.productName, item.nombre_comercial,
           item.notes, item.descripcion, item.measures, item.medidas, item.type, item.submodel, item.material, item.color,
+          item.materialIds?.join(' '), item.colorIds?.join(' '), item.submodelIds?.join(' '),
           typeName(item), submodelName(item), materialName(item), colorName(item),
+          itemMaterials(item).map(m => tablesFor('materials')[m]).filter(Boolean).join(' '),
+          itemColors(item).map(c => tablesFor('colors')[c]).filter(Boolean).join(' '),
+          itemSubmodels(item).map(s => {
+            const v = tablesFor('submodels')[s];
+            return typeof v === 'string' ? v : v?.label || '';
+          }).filter(Boolean).join(' '),
         ].join(' ').toLowerCase();
         if (!text.includes(q)) return false;
       }
       if (state.filters.type.length && !state.filters.type.includes(itemType(item))) return false;
-      if (state.filters.submodel.length && !state.filters.submodel.includes(itemSubmodel(item))) return false;
-      if (state.filters.material.length && !state.filters.material.includes(itemMaterial(item))) return false;
-      if (state.filters.color.length && !state.filters.color.includes(itemColor(item))) return false;
+      if (state.filters.submodel.length) {
+        const available = new Set(itemSubmodels(item));
+        if (!state.filters.submodel.some(v => available.has(v))) return false;
+      }
+      if (state.filters.material.length) {
+        const available = new Set(itemMaterials(item));
+        if (!state.filters.material.some(v => available.has(v))) return false;
+      }
+      if (state.filters.color.length) {
+        const available = new Set(itemColors(item));
+        if (!state.filters.color.some(v => available.has(v))) return false;
+      }
       const price = Number(item.price || item.precio_eur || 0);
       const min = Number(String(state.filters.priceMin || '').replace(',', '.'));
       const max = Number(String(state.filters.priceMax || '').replace(',', '.'));
@@ -660,12 +1352,36 @@ function checkboxFilterHtml(key, title, kind) {
   `;
 }
 
+function multiCheckboxHtml({ field, kind, selected = [], modelCode = '', dataAttr = '', extras = '' }) {
+  const selectedSet = new Set(selected.filter(Boolean));
+  const entries = sortedEntries(kind).filter(([codeValue]) => {
+    if (kind !== 'submodels') return true;
+    const parents = submodelModels(codeValue);
+    return !parents.length || !modelCode || parents.includes(modelCode);
+  });
+  if (!entries.length) return '<div class="public-edit-empty-inline">Sin opciones. Crea alguna en Tablas.</div>';
+  const rows = entries.map(([codeValue, value]) => {
+    const label = typeof value === 'string' ? value : value?.label || codeValue;
+    const models = kind === 'submodels' ? submodelModels(codeValue) : [];
+    const prefix = kind === 'submodels' && models.length
+      ? `${models.map(model => tablesFor('types')[model] || model).join(', ')} / `
+      : '';
+    return `
+      <label class="public-edit-check-option">
+        <input type="checkbox" ${dataAttr}${extras ? ' ' + extras : ''} value="${escapeAttr(codeValue)}"${selectedSet.has(codeValue) ? ' checked' : ''}>
+        <span>${escapeHtml(codeValue)} · ${escapeHtml(prefix)}${escapeHtml(label)}</span>
+      </label>
+    `;
+  }).join('');
+  return `<div class="public-edit-filter-group public-edit-check-inline-list">${rows}</div>`;
+}
+
 function applyBulk() {
   if (!state.selected.size) return;
   const type = document.querySelector('[data-bulk-type]')?.value || '';
-  const submodel = document.querySelector('[data-bulk-submodel]')?.value || '';
-  const material = document.querySelector('[data-bulk-material]')?.value || '';
-  const color = document.querySelector('[data-bulk-color]')?.value || '';
+  const bulkSubmodelValues = [...new Set([...document.querySelectorAll('[data-bulk-multi="submodelIds"][data-bulk-action="toggle"]:checked')].map(i => String(i.value || '').trim()).filter(Boolean))];
+  const bulkMaterialValues = [...new Set([...document.querySelectorAll('[data-bulk-multi="materialIds"][data-bulk-action="toggle"]:checked')].map(i => String(i.value || '').trim()).filter(Boolean))];
+  const bulkColorValues = [...new Set([...document.querySelectorAll('[data-bulk-multi="colorIds"][data-bulk-action="toggle"]:checked')].map(i => String(i.value || '').trim()).filter(Boolean))];
   state.selected.forEach(index => {
     const item = state.items[index];
     if (!item) return;
@@ -673,14 +1389,19 @@ function applyBulk() {
       item.type = type;
       item.tipo = type;
     }
-    if (submodel) {
-      item.submodel = submodel;
-      item.submodelo = submodel;
+    if (bulkSubmodelValues.length) {
+      item.submodelIds = [...new Set([...itemSubmodels(item), ...bulkSubmodelValues])];
     }
-    if (material) item.material = material;
-    if (color) item.color = color;
+    if (bulkMaterialValues.length) {
+      item.materialIds = [...new Set([...itemMaterials(item), ...bulkMaterialValues])];
+    }
+    if (bulkColorValues.length) {
+      item.colorIds = [...new Set([...itemColors(item), ...bulkColorValues])];
+    }
+    syncMultiPrimary(item);
     syncPieceName(item);
   });
+  document.querySelectorAll('[data-bulk-multi]').forEach(i => { i.checked = false; });
   savePublicPayload();
   renderWorkspace();
 }
@@ -790,13 +1511,16 @@ function deleteTableEntry(kind) {
   if (!codeValue) return;
   const fallback = kind === 'types' ? 'PIE' : kind === 'submodels' ? '' : '999';
   const affectedField = kind === 'types' ? 'type' : kind === 'submodels' ? 'submodel' : kind === 'materials' ? 'material' : 'color';
-  const used = state.items.filter(item => item[affectedField] === codeValue).length;
+  const multiField = kind === 'submodels' ? 'submodelIds' : kind === 'materials' ? 'materialIds' : 'colorIds';
+  const used = state.items.filter(item => item[affectedField] === codeValue || (Array.isArray(item[multiField]) && item[multiField].includes(codeValue))).length;
   if (codeValue === fallback) return;
   delete state.tables[kind][codeValue];
   if (used) {
     state.items.forEach(item => {
       if (item[affectedField] === codeValue) item[affectedField] = fallback;
       if (kind === 'submodels' && item.submodelo === codeValue) item.submodelo = fallback;
+      if (Array.isArray(item[multiField])) item[multiField] = item[multiField].filter(v => v !== codeValue);
+      syncMultiPrimary(item);
     });
   }
   savePublicPayload();
@@ -877,8 +1601,11 @@ function createItemFromDraft() {
     tipo: type,
     submodel,
     submodelo: submodel,
+    submodelIds: Array.isArray(draft.submodelIds) ? [...draft.submodelIds] : [],
     material,
+    materialIds: Array.isArray(draft.materialIds) ? [...draft.materialIds] : [material],
     color,
+    colorIds: Array.isArray(draft.colorIds) ? [...draft.colorIds] : [color],
     unit: String(draft.unit || '001').replace(/\D/g, '').padStart(3, '0').slice(-3),
     price: normalizePrice(draft.price),
     precio_eur: normalizePrice(draft.price),
@@ -1067,9 +1794,18 @@ function renderWorkspace() {
           <summary>Abrir edición de la pieza</summary>
           <div class="public-edit-card-fields">
             <label>Tipo<select data-item-field="type" data-index="${index}">${typeOptions}</select></label>
-            <label>Submodelo<select data-item-field="submodel" data-index="${index}">${submodelOptionsFor(itemType(item), itemSubmodel(item))}</select></label>
-            <label>Material<select data-item-field="material" data-index="${index}">${materialOptions}</select></label>
-            <label>Color<select data-item-field="color" data-index="${index}">${colorOptions}</select></label>
+            <fieldset class="public-edit-multi-field">
+              <legend>Submodelos (puedes marcar varios)</legend>
+              ${multiCheckboxHtml({ field: 'submodelIds', kind: 'submodels', selected: itemSubmodels(item), modelCode: itemType(item), dataAttr: `data-item-multi="submodelIds" data-index="${index}"` })}
+            </fieldset>
+            <fieldset class="public-edit-multi-field">
+              <legend>Materiales (puedes marcar varios)</legend>
+              ${multiCheckboxHtml({ field: 'materialIds', kind: 'materials', selected: itemMaterials(item), dataAttr: `data-item-multi="materialIds" data-index="${index}"` })}
+            </fieldset>
+            <fieldset class="public-edit-multi-field">
+              <legend>Colores (puedes marcar varios)</legend>
+              ${multiCheckboxHtml({ field: 'colorIds', kind: 'colors', selected: itemColors(item), dataAttr: `data-item-multi="colorIds" data-index="${index}"` })}
+            </fieldset>
             <label>Unidad<input data-item-field="unit" data-index="${index}" value="${escapeAttr(item.unit || '')}" maxlength="3"></label>
             <label>Precio<input data-item-field="price" data-index="${index}" value="${escapeAttr(item.price || item.precio_eur || '')}" inputmode="decimal" placeholder="0,00"></label>
             <label>Stock<input data-item-field="stock" data-index="${index}" value="${escapeAttr(item.stock || '')}" inputmode="numeric" placeholder="1"></label>
@@ -1129,6 +1865,7 @@ function renderWorkspace() {
           <button type="button" data-restore-auto-backup>Restaurar último autorespaldo</button>
         </div>
         <div class="public-edit-helper" data-auto-backup-status></div>
+        ${snapshotsPanelHtml()}
       </div>
     </details>
 
@@ -1148,9 +1885,18 @@ function renderWorkspace() {
           <label>IDF<input data-create-field="idf" value="${escapeAttr(draft.idf)}" placeholder="Modelo o identificador interno"></label>
           <label>Codigo producto<input data-create-field="codigo_producto" value="${escapeAttr(draft.codigo_producto)}" placeholder="Opcional"></label>
           <label>Tipo<select data-create-field="type">${typeOptions}</select></label>
-          <label>Submodelo<select data-create-field="submodel">${draftSubmodelOptions}</select></label>
-          <label>Material<select data-create-field="material">${materialOptions}</select></label>
-          <label>Color<select data-create-field="color">${colorOptions}</select></label>
+          <fieldset class="public-edit-multi-field public-edit-create-grid public-edit-create-grid--multi">
+            <legend>Submodelos (puedes marcar varios)</legend>
+            ${multiCheckboxHtml({ field: 'submodelIds', kind: 'submodels', selected: normalizeIdArray(draft.submodelIds, draft.submodel || ''), modelCode: draft.type || 'PIE', dataAttr: 'data-create-multi="submodelIds"' })}
+          </fieldset>
+          <fieldset class="public-edit-multi-field public-edit-create-grid public-edit-create-grid--multi">
+            <legend>Materiales (puedes marcar varios)</legend>
+            ${multiCheckboxHtml({ field: 'materialIds', kind: 'materials', selected: normalizeIdArray(draft.materialIds, draft.material || '000'), dataAttr: 'data-create-multi="materialIds"' })}
+          </fieldset>
+          <fieldset class="public-edit-multi-field public-edit-create-grid public-edit-create-grid--multi">
+            <legend>Colores (puedes marcar varios)</legend>
+            ${multiCheckboxHtml({ field: 'colorIds', kind: 'colors', selected: normalizeIdArray(draft.colorIds, draft.color || '000'), dataAttr: 'data-create-multi="colorIds"' })}
+          </fieldset>
           <label>Unidad<input data-create-field="unit" value="${escapeAttr(draft.unit)}" maxlength="3" inputmode="numeric" placeholder="001"></label>
           <label>Precio<input data-create-field="price" value="${escapeAttr(draft.price)}" inputmode="decimal" placeholder="0,00"></label>
           <label>Stock<input data-create-field="stock" value="${escapeAttr(draft.stock)}" inputmode="numeric" placeholder="1"></label>
@@ -1295,9 +2041,18 @@ function renderWorkspace() {
         </div>
         <div class="public-edit-bulk">
           <label>Tipo<select data-bulk-type>${bulkTypeOptions}</select></label>
-          <label>Submodelo<select data-bulk-submodel>${bulkSubmodelOptions}</select></label>
-          <label>Material<select data-bulk-material>${bulkMaterialOptions}</select></label>
-          <label>Color<select data-bulk-color>${bulkColorOptions}</select></label>
+          <fieldset class="public-edit-multi-field public-edit-bulk-multi">
+            <legend>Submodelos (añadir / quitar en lote)</legend>
+            ${multiCheckboxHtml({ field: 'submodelIds', kind: 'submodels', selected: [], dataAttr: 'data-bulk-multi="submodelIds"', extras: 'data-bulk-action="toggle"' })}
+          </fieldset>
+          <fieldset class="public-edit-multi-field public-edit-bulk-multi">
+            <legend>Materiales (añadir / quitar en lote)</legend>
+            ${multiCheckboxHtml({ field: 'materialIds', kind: 'materials', selected: [], dataAttr: 'data-bulk-multi="materialIds"', extras: 'data-bulk-action="toggle"' })}
+          </fieldset>
+          <fieldset class="public-edit-multi-field public-edit-bulk-multi">
+            <legend>Colores (añadir / quitar en lote)</legend>
+            ${multiCheckboxHtml({ field: 'colorIds', kind: 'colors', selected: [], dataAttr: 'data-bulk-multi="colorIds"', extras: 'data-bulk-action="toggle"' })}
+          </fieldset>
         </div>
         <div class="public-edit-selection-help">
           <strong>Navegación</strong>
@@ -1344,10 +2099,28 @@ function renderWorkspace() {
         updateDraftField(field, input.value);
         if (field === 'type') {
           state.draft.submodel = '';
+          state.draft.submodelIds = [];
           renderWorkspace();
         }
       });
     }
+  });
+  workspace.querySelectorAll('[data-create-multi]').forEach(input => {
+    const field = input.dataset.createMulti;
+    if (!field) return;
+    input.addEventListener('change', () => {
+      const checked = [...document.querySelectorAll(`[data-create-multi="${field}"]:checked`)].map(i => String(i.value || '').trim()).filter(Boolean);
+      if (!Array.isArray(state.draft[field])) state.draft[field] = [];
+      state.draft[field] = [...new Set(checked)];
+      const primary = state.draft[field][0];
+      if (field === 'materialIds') state.draft.material = primary || '000';
+      if (field === 'colorIds') state.draft.color = primary || '000';
+      if (field === 'submodelIds') {
+        state.draft.submodel = primary || '';
+        state.draft.submodelo = state.draft.submodel;
+      }
+      savePublicPayload({ reason: 'typing' });
+    });
   });
   workspace.querySelector('[data-create-item]').addEventListener('click', createItemFromDraft);
   workspace.querySelector('[data-reset-draft]').addEventListener('click', () => {
@@ -1396,6 +2169,256 @@ function renderWorkspace() {
     if (!restoreLatestAutoBackup()) {
       alert('Todavia no hay respaldos automaticos para restaurar.');
     }
+  });
+
+  workspace.querySelectorAll('[data-snapshot-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.snapshotTab;
+      workspace.querySelectorAll('[data-snapshot-list]').forEach(sec => {
+        sec.hidden = sec.dataset.snapshotList !== tab;
+      });
+      workspace.querySelectorAll('[data-snapshot-tab]').forEach(b => {
+        b.classList.toggle('is-primary', b === btn);
+        if (b === btn) b.setAttribute('data-snapshot-tab-state', 'open');
+        else b.removeAttribute('data-snapshot-tab-state');
+      });
+    });
+  });
+
+  workspace.querySelector('[data-snapshot-create-manual]')?.addEventListener('click', () => {
+    const nameInput = workspace.querySelector('[data-snapshot-manual-name]');
+    const tagInput = workspace.querySelector('[data-snapshot-manual-tag]');
+    const name = String(nameInput?.value || '').trim();
+    const tag = String(tagInput?.value || '').trim();
+    const meta = createSnapshot({ kind: 'manual', reason: 'manual-button', name, tag });
+    if (!meta) {
+      alert('No se pudo crear el snapshot manual (puede que localStorage esté lleno).');
+      return;
+    }
+    const report = workspace.querySelector('[data-snapshot-report]');
+    if (report) {
+      report.hidden = false;
+      report.className = 'public-edit-snapshots-report';
+      report.textContent = `Snapshot manual creado: ${formatDateLocal(meta.savedAt)} · ${meta.itemsCount} piezas · ${formatBytes(meta.bytes)} · id=${meta.id}`;
+      report.classList.add('is-ok');
+    }
+    if (nameInput) nameInput.value = '';
+    if (tagInput) tagInput.value = '';
+    renderWorkspace();
+  });
+
+  workspace.querySelector('[data-snapshot-verify]')?.addEventListener('click', () => {
+    const report = verifyAllSnapshots();
+    const el = workspace.querySelector('[data-snapshot-report]');
+    if (!el) return;
+    el.hidden = false;
+    el.className = 'public-edit-snapshots-report';
+    const verdict = report.corrupt || report.missing ? 'Atención:' : 'OK.';
+    const details = report.details.slice(0, 12).map(d => {
+      if (d.verdict === 'ok') return `✓ ${d.id.slice(-10)}`;
+      if (d.verdict === 'missing') return `✗ missing ${d.id.slice(-10)}`;
+      return `✗ corrupt ${d.id.slice(-10)}`;
+    }).join(' · ');
+    el.textContent = `${verdict} ${report.ok} válidos · ${report.corrupt} corruptos · ${report.missing} ausentes. ${details}`;
+    if (report.corrupt || report.missing) el.classList.add('is-error');
+    else el.classList.add('is-ok');
+    renderWorkspace();
+  });
+
+  workspace.querySelector('[data-snapshot-download-all]')?.addEventListener('click', () => {
+    const ok = downloadAllSnapshots();
+    if (!ok) alert('No hay snapshots para empaquetar.');
+  });
+
+  workspace.querySelector('[data-snapshot-purge]')?.addEventListener('click', () => {
+    const before = readSnapshotIndex();
+    const after = purgeOldSnapshots();
+    const el = workspace.querySelector('[data-snapshot-report]');
+    if (el) {
+      el.hidden = false;
+      el.className = 'public-edit-snapshots-report is-ok';
+      el.textContent = `Limpieza retention. Antes: ${(before.auto || []).length + (before.manual || []).length} → ahora: ${(after.auto || []).length + (after.manual || []).length}.`;
+    }
+    renderWorkspace();
+  });
+
+  workspace.querySelector('[data-snapshot-import-button]')?.addEventListener('click', () => {
+    workspace.querySelector('[data-snapshot-import-file]')?.click();
+  });
+
+  workspace.querySelector('[data-snapshot-import-file]')?.addEventListener('change', async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const res = await importSnapshotJsonFile(file);
+    const el = workspace.querySelector('[data-snapshot-report]');
+    if (el) {
+      el.hidden = false;
+      el.className = 'public-edit-snapshots-report';
+      if (res?.ok) {
+        el.classList.add('is-ok');
+        el.textContent = `Importado OK · ${res.imported || 1} snapshot(s) desde "${file.name}".`;
+      } else {
+        el.classList.add('is-error');
+        el.textContent = `Error importando "${file.name}" (${res?.reason || 'desconocido'}). Asegúrate que sea un JSON de respaldo válido.`;
+      }
+    }
+    renderWorkspace();
+  });
+
+  workspace.querySelectorAll('[data-snapshot-preview]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.snapshotPreview;
+      const wrap = getSnapshotById(id);
+      if (!wrap?.meta || !wrap?.payload) {
+        alert('Snapshot no encontrado.');
+        return;
+      }
+      const meta = wrap.meta;
+      const sample = (wrap.payload.items || []).slice(0, 8).map(it => {
+        return [
+          `<li><code>${escapeHtml(code(it))}</code> · <strong>${escapeHtml(pieceName(it))}</strong> · ${escapeHtml(normalizePrice(it.price) || '—')}€ · ${escapeHtml(normalizeStock(it.stock) || '—')}uds</li>`
+        ].join('');
+      }).join('');
+      const extraLines = Object.entries(meta.extra || {}).map(([k, v]) => `<li><em>${escapeHtml(k)}:</em> <code>${escapeHtml(String(v))}</code></li>`).join('');
+      const inner = workspace.querySelector('[data-snapshot-modal-inner]');
+      const modal = workspace.querySelector('[data-snapshot-modal]');
+      if (!inner || !modal) return;
+      inner.innerHTML = `
+        <div class="public-edit-snapshots-modal-head">
+          <strong>${escapeHtml(meta.name || (meta.kind === 'auto' ? 'Snapshot automático' : 'Snapshot manual'))}</strong>
+          <button type="button" class="is-link" data-snapshot-modal-close>✕ Cerrar</button>
+        </div>
+        <dl class="public-edit-snapshots-modal-meta">
+          <dt>ID</dt><dd><code>${escapeHtml(meta.id)}</code></dd>
+          <dt>Fecha</dt><dd>${escapeHtml(formatDateLocal(meta.savedAt))}</dd>
+          <dt>Motivo / reason</dt><dd>${escapeHtml(meta.reason || '—')}</dd>
+          <dt>Tag</dt><dd>${escapeHtml(meta.tag || '—')}</dd>
+          <dt>Piezas</dt><dd>${escapeHtml(String(meta.itemsCount || 0))}</dd>
+          <dt>Tablas</dt><dd>Tipos ${escapeHtml(String(meta.tablesRows?.types || 0))} · Subm. ${escapeHtml(String(meta.tablesRows?.submodels || 0))} · Mat. ${escapeHtml(String(meta.tablesRows?.materials || 0))} · Col. ${escapeHtml(String(meta.tablesRows?.colors || 0))}</dd>
+          <dt>Tamaño</dt><dd>${escapeHtml(formatBytes(meta.bytes || 0))}</dd>
+          <dt>Checksum (fnv1a-64trunc)</dt><dd><code>${escapeHtml(meta.checksum || '')}</code></dd>
+          ${extraLines ? `<dt>Extra</dt><dd><ul>${extraLines}</ul></dd>` : ''}
+        </dl>
+        <div class="public-edit-snapshots-modal-samples">
+          <p><strong>Muestra del contenido (primeras 8 piezas)</strong></p>
+          ${sample ? `<ul class="public-edit-snapshots-modal-samples-list">${sample}</ul>` : '<div class="public-edit-empty-inline">Sin piezas en este snapshot.</div>'}
+        </div>
+        <div class="public-edit-snapshots-modal-actions">
+          <button type="button" class="is-primary" data-snapshot-restore="${escapeAttr(id)}">Restaurar este snapshot</button>
+          <button type="button" data-snapshot-download="${escapeAttr(id)}">Descargar</button>
+          <button type="button" class="is-danger" data-snapshot-delete="${escapeAttr(id)}">Borrar</button>
+        </div>
+      `;
+      modal.hidden = false;
+      modal.style.display = 'block';
+      modal.querySelector('[data-snapshot-modal-close]')?.addEventListener('click', () => {
+        modal.hidden = true;
+        modal.style.display = 'none';
+      });
+      ['data-snapshot-restore', 'data-snapshot-download', 'data-snapshot-delete'].forEach(attr => {
+        modal.querySelectorAll(`[${attr}]`).forEach(b => b.addEventListener('click', () => {
+          const bid = b.getAttribute(attr);
+          const real = workspace.querySelector(`[${attr}="${bid}"]`);
+          if (real) real.click();
+          else if (attr === 'data-snapshot-restore') doRestoreSnapshot(bid);
+          else if (attr === 'data-snapshot-download') downloadSnapshot(bid);
+          else if (attr === 'data-snapshot-delete') deleteSnapshotById(bid);
+          modal.hidden = true;
+          modal.style.display = 'none';
+        }));
+      });
+    });
+  });
+
+  workspace.querySelectorAll('[data-snapshot-restore]').forEach(btn => {
+    if (btn.closest('[data-snapshot-modal]')) return;
+    btn.addEventListener('click', () => doRestoreSnapshot(btn.dataset.snapshotRestore));
+  });
+
+  function doRestoreSnapshot(id) {
+    if (!id) return;
+    const preview = restoreSnapshotById(id, { dryRun: true });
+    if (!preview?.ok) {
+      const reason = preview?.reason || 'desconocido';
+      alert(`No se puede restaurar este snapshot (${reason}).`);
+      return;
+    }
+    const m = preview.meta;
+    const ok = window.confirm([
+      `¿Restaurar este snapshot?`,
+      `· Fecha: ${formatDateLocal(m?.savedAt)}`,
+      `· Nombre: ${m?.name || '(sin nombre)'}`,
+      `· Piezas: ${preview.itemsCount}`,
+      `· Checksum: ${m?.checksum?.slice(0, 10) || ''}…`,
+      '',
+      'Esto SUSTITUIRÁ tu catálogo actual. Esta acción no se puede deshacer (pero sí crear un snapshot manual ahora mismo si te arrepientes).',
+    ].join('\n'));
+    if (!ok) return;
+    const result = restoreSnapshotById(id);
+    const el = workspace.querySelector('[data-snapshot-report]');
+    if (el) {
+      el.hidden = false;
+      el.className = 'public-edit-snapshots-report';
+      if (result?.ok) {
+        el.classList.add('is-ok');
+        el.textContent = `Restaurado OK. ${result.itemsCount} piezas desde ${formatDateLocal(result.meta?.savedAt)}.`;
+      } else {
+        el.classList.add('is-error');
+        el.textContent = `Fallo al restaurar (${result?.reason || 'desconocido'}).`;
+      }
+    }
+    if (!result?.ok) alert('Fallo al restaurar.');
+  }
+
+  workspace.querySelectorAll('[data-snapshot-download]').forEach(btn => {
+    if (btn.closest('[data-snapshot-modal]')) return;
+    btn.addEventListener('click', () => {
+      const ok = downloadSnapshot(btn.dataset.snapshotDownload);
+      if (!ok) alert('No se pudo descargar el snapshot.');
+    });
+  });
+
+  workspace.querySelectorAll('[data-snapshot-delete]').forEach(btn => {
+    if (btn.closest('[data-snapshot-modal]')) return;
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.snapshotDelete;
+      const wrap = getSnapshotById(id);
+      if (!wrap?.meta) return;
+      if (!window.confirm([
+        `¿Borrar este snapshot?`,
+        `· Fecha: ${formatDateLocal(wrap.meta.savedAt)}`,
+        `· Nombre: ${wrap.meta.name || '(sin nombre)'}`,
+        `· Piezas: ${wrap.meta.itemsCount || 0}`,
+      ].join('\n'))) return;
+      deleteSnapshotById(id);
+    });
+  });
+
+  workspace.querySelectorAll('[data-snapshot-promote]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.snapshotPromote;
+      const existing = getSnapshotById(id)?.meta;
+      const proposedName = existing?.name ? String(existing.name) : `Promovido ${formatDateLocal(existing?.savedAt)}`;
+      const name = window.prompt('Nombre para el snapshot manual (lo mantendrás más tiempo en retention):', proposedName);
+      if (name === null) return;
+      const ok = promoteSnapshotToManual(id, name);
+      if (!ok) alert('No se pudo promocionar.');
+      else renderWorkspace();
+    });
+  });
+
+  workspace.querySelectorAll('[data-snapshot-rename]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.snapshotRename;
+      const wrap = getSnapshotById(id);
+      if (!wrap?.meta) return;
+      const current = wrap.meta.name || '';
+      const next = window.prompt('Nombre del snapshot:', current);
+      if (next === null) return;
+      renameSnapshot(id, next);
+      renderWorkspace();
+    });
   });
   workspace.querySelector('[data-apply-bulk]').addEventListener('click', applyBulk);
   workspace.querySelectorAll('[data-add-types]').forEach(btn => btn.addEventListener('click', () => addTableEntry('types')));
@@ -1533,6 +2556,25 @@ function renderWorkspace() {
       });
     }
   });
+
+  workspace.querySelectorAll('[data-item-multi]').forEach(input => {
+    const index = Number(input.dataset.index);
+    const field = input.dataset.itemMulti;
+    const item = state.items[index];
+    if (!item || !field) return;
+    const applySelected = () => {
+      const checked = [...new Set([...document.querySelectorAll(`[data-item-multi="${field}"][data-index="${index}"]:checked`)].map(i => String(i.value || '').trim()).filter(Boolean))];
+      item[field] = checked;
+      syncMultiPrimary(item);
+      syncPieceName(item);
+    };
+    input.addEventListener('change', () => {
+      applySelected();
+      savePublicPayload();
+      renderWorkspace();
+    });
+  });
+
   renderAutoBackupStatus();
 }
 

@@ -13,6 +13,7 @@ const clearFilters = document.querySelector('#clearFilters');
 const visibleCount = document.querySelector('#visibleCount');
 const resultSummary = document.querySelector('#resultSummary');
 const resultHint = document.querySelector('#resultHint');
+const favoriteStatus = document.querySelector('#favoriteStatus');
 const activeFilters = document.querySelector('#activeFilters');
 const typeFilterChips = document.querySelector('#typeFilterChips');
 const submodelFilterChips = document.querySelector('#submodelFilterChips');
@@ -57,6 +58,7 @@ let currentRows = [];
 let originalIndexById = new Map();
 let savedFilterPresets = [];
 let favoriteKeys = new Set();
+let clientAreaReady = false;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch]));
@@ -153,6 +155,32 @@ function itemColor(item) {
   return item.color || '000';
 }
 
+function normalizeIdArray(value, fallback) {
+  if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+  const arr = String(value || '').split(',').map(v => v.trim()).filter(Boolean);
+  if (fallback && !arr.length) return [fallback];
+  return arr;
+}
+
+function itemMaterials(item) {
+  const arr = normalizeIdArray(item?.materialIds, itemMaterial(item));
+  if (!arr.includes(itemMaterial(item))) arr.unshift(itemMaterial(item));
+  return [...new Set(arr)];
+}
+
+function itemColors(item) {
+  const arr = normalizeIdArray(item?.colorIds, itemColor(item));
+  if (!arr.includes(itemColor(item))) arr.unshift(itemColor(item));
+  return [...new Set(arr)];
+}
+
+function itemSubmodels(item) {
+  const base = itemSubmodel(item);
+  const arr = normalizeIdArray(item?.submodelIds, base);
+  if (base && !arr.includes(base)) arr.unshift(base);
+  return [...new Set(arr)];
+}
+
 function submodelName(item) {
   const value = itemSubmodel(item);
   const entry = activeTables.submodels?.[value];
@@ -188,6 +216,12 @@ function descriptionText(item) {
 }
 
 function searchText(item) {
+  const submodelAll = itemSubmodels(item).flatMap(code => {
+    const entry = activeTables.submodels?.[code];
+    return [code, typeof entry === 'string' ? entry : entry?.label || ''].filter(Boolean);
+  });
+  const materialAll = itemMaterials(item).flatMap(code => [code, activeTables.materials[code] || ''].filter(Boolean));
+  const colorAll = itemColors(item).flatMap(code => [code, activeTables.colors[code] || ''].filter(Boolean));
   return normalizeText([
     item.codigo,
     technicalCode(item),
@@ -199,18 +233,24 @@ function searchText(item) {
     item.tipo,
     item.submodel,
     item.submodelo,
+    (item.submodelIds || []).join(' '),
     submodelName(item),
     typeName(item),
     item.material,
     item.material_nombre,
+    (item.materialIds || []).join(' '),
     materialName(item),
     item.color,
     item.color_nombre,
+    (item.colorIds || []).join(' '),
     colorName(item),
     item.estado,
     STATUS[item.estado],
     item.medidas,
     descriptionText(item),
+    submodelAll.join(' '),
+    materialAll.join(' '),
+    colorAll.join(' '),
   ].join(' '));
 }
 
@@ -225,27 +265,36 @@ function baseRows() {
   return catalog.filter(item => matchesQuery(item));
 }
 
+function itemGroupValues(group, item) {
+  if (group === 'type') return [itemType(item)];
+  if (group === 'submodel') return itemSubmodels(item);
+  if (group === 'material') return itemMaterials(item);
+  if (group === 'color') return itemColors(item);
+  return [];
+}
+
 function matchesGroup(group, value, ignoreGroup) {
   if (group === ignoreGroup) return true;
   const selected = activeSelection(group);
-  return !selected.size || selected.has(value);
+  if (!selected.size) return true;
+  return itemGroupValues(group, value).some(v => selected.has(v));
 }
 
 function rowsForOptions(ignoreGroup) {
   return baseRows().filter(item =>
-    matchesGroup('type', itemType(item), ignoreGroup) &&
-    matchesGroup('submodel', itemSubmodel(item), ignoreGroup) &&
-    matchesGroup('material', itemMaterial(item), ignoreGroup) &&
-    matchesGroup('color', itemColor(item), ignoreGroup)
+    matchesGroup('type', item, ignoreGroup) &&
+    matchesGroup('submodel', item, ignoreGroup) &&
+    matchesGroup('material', item, ignoreGroup) &&
+    matchesGroup('color', item, ignoreGroup)
   );
 }
 
 function selectedRows() {
   return baseRows().filter(item =>
-    matchesGroup('type', itemType(item)) &&
-    matchesGroup('submodel', itemSubmodel(item)) &&
-    matchesGroup('material', itemMaterial(item)) &&
-    matchesGroup('color', itemColor(item))
+    matchesGroup('type', item) &&
+    matchesGroup('submodel', item) &&
+    matchesGroup('material', item) &&
+    matchesGroup('color', item)
   );
 }
 
@@ -264,9 +313,11 @@ function sortRows(rows) {
 function optionRows(rows, keyFn, labelFn) {
   const options = new Map();
   rows.forEach(item => {
-    const key = keyFn(item);
-    if (!options.has(key)) options.set(key, { label: labelFn(item), count: 0 });
-    options.get(key).count += 1;
+    const keys = Array.isArray(keyFn) ? keyFn(item) : [keyFn(item)];
+    keys.filter(Boolean).forEach(key => {
+      if (!options.has(key)) options.set(key, { label: labelFn({ ...item, __optionKey: key, __optionIdx: 0 }), count: 0 });
+      options.get(key).count += 1;
+    });
   });
   return [...options.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label, 'es'));
 }
@@ -296,10 +347,22 @@ function renderFilterGroup(group, options) {
 }
 
 function syncFilterGroups() {
-  renderFilterGroup('type', optionRows(rowsForOptions('type'), itemType, typeName));
-  renderFilterGroup('submodel', optionRows(rowsForOptions('submodel'), itemSubmodel, submodelName));
-  renderFilterGroup('material', optionRows(rowsForOptions('material'), itemMaterial, materialName));
-  renderFilterGroup('color', optionRows(rowsForOptions('color'), itemColor, colorName));
+  renderFilterGroup('type', optionRows(rowsForOptions('type'), itemType, item => typeName(item)));
+  renderFilterGroup('submodel', optionRows(rowsForOptions('submodel'), item => itemSubmodels(item), item => {
+    const key = item?.__optionKey || itemSubmodel(item);
+    const entry = activeTables.submodels?.[key];
+    if (!key) return 'Sin submodelo';
+    if (typeof entry === 'string') return entry;
+    return entry?.label || key;
+  }));
+  renderFilterGroup('material', optionRows(rowsForOptions('material'), item => itemMaterials(item), item => {
+    const key = item?.__optionKey || itemMaterial(item);
+    return activeTables.materials[key] || item.material_nombre || 'Material pendiente';
+  }));
+  renderFilterGroup('color', optionRows(rowsForOptions('color'), item => itemColors(item), item => {
+    const key = item?.__optionKey || itemColor(item);
+    return activeTables.colors[key] || item.color_nombre || 'Color pendiente';
+  }));
 }
 
 function syncUrl() {
@@ -353,12 +416,23 @@ function cardTitle(item) {
 }
 
 function itemDetails(item) {
+  const submodelList = itemSubmodels(item);
+  const materialList = itemMaterials(item);
+  const colorList = itemColors(item);
+  const submodelText = submodelList.length
+    ? submodelList.map(code => {
+        const entry = activeTables.submodels?.[code];
+        return typeof entry === 'string' ? entry : entry?.label || code;
+      }).filter(Boolean).join(' · ')
+    : '';
+  const materialText = materialList.map(code => activeTables.materials[code] || code).join(' · ');
+  const colorText = colorList.map(code => activeTables.colors[code] || code).join(' · ');
   return [
     ['Código', catalogCodeText(item)],
     ['Tipo', typeName(item)],
-    ['Submodelo', itemSubmodel(item) ? submodelName(item) : ''],
-    ['Material', materialName(item)],
-    ['Color', colorName(item)],
+    ['Submodelos', submodelText],
+    ['Materiales', materialText],
+    ['Colores', colorText],
     ['Precio', priceText(item.precio_eur ?? item.price) || 'Precio pendiente'],
     ['Estado', `${STATUS[item.estado] || item.estado || 'Disponible'}${item.stock ? ` · Stock ${item.stock}` : ''}`],
     ['Medidas', item.medidas || ''],
@@ -417,16 +491,14 @@ function syncFilterSummary() {
   }
 }
 
-function renderResultSummary(totalRows, visibleRows) {
+function renderResultSummary(visibleRows) {
   if (visibleCount) {
-    visibleCount.textContent = `${visibleRows.length.toLocaleString('es-ES')} piezas`;
+    visibleCount.textContent = '';
   }
   if (resultSummary) {
-    if (!hasActiveFilters()) {
-      resultSummary.textContent = `Mostrando las ${totalRows.toLocaleString('es-ES')} piezas del catálogo`;
-    } else {
-      resultSummary.textContent = `${visibleRows.length.toLocaleString('es-ES')} resultados de ${totalRows.toLocaleString('es-ES')} piezas`;
-    }
+    if (!visibleRows.length) resultSummary.textContent = 'Sin resultados';
+    else if (!hasActiveFilters()) resultSummary.textContent = 'Catálogo completo';
+    else resultSummary.textContent = 'Resultados filtrados';
   }
   if (resultHint) {
     const tokens = queryTokens();
@@ -440,6 +512,15 @@ function renderResultSummary(totalRows, visibleRows) {
       resultHint.textContent = 'Puedes reutilizar una combinación guardada desde la zona de favoritos.';
     } else {
       resultHint.textContent = 'Puedes cambiar cada filtro desde sus menus desplegables del panel.';
+    }
+  }
+  if (favoriteStatus) {
+    if (!clientAreaReady) {
+      favoriteStatus.textContent = 'Inicia sesión en el área cliente para guardar favoritos asociados a tu cuenta.';
+    } else if (favoriteKeys.size) {
+      favoriteStatus.textContent = `${favoriteKeys.size.toLocaleString('es-ES')} tarjetas guardadas en favoritos para tu área cliente.`;
+    } else {
+      favoriteStatus.textContent = 'Marca el corazon de una tarjeta para guardarla en favoritos y verla después en tu área cliente.';
     }
   }
 }
@@ -589,7 +670,7 @@ function render() {
   renderSavedFilters();
   const rows = sortRows(selectedRows());
   currentRows = rows;
-  renderResultSummary(catalog.length, rows);
+  renderResultSummary(rows);
   renderActiveFilters();
   syncFilterSummary();
   syncUrl();
@@ -600,7 +681,7 @@ function render() {
     <div class="card-info">
       <div class="card-info-head">
         <span class="card-type">${escapeHtml(typeName(item))}${itemSubmodel(item) ? ` · ${escapeHtml(submodelName(item))}` : ''}</span>
-        <button class="favorite-toggle${isFavorite(item) ? ' is-active' : ''}" type="button" data-favorite-index="${index}" aria-pressed="${isFavorite(item) ? 'true' : 'false'}" aria-label="${isFavorite(item) ? 'Quitar de favoritos' : 'Añadir a favoritos'}">${isFavorite(item) ? 'Favorito' : 'Guardar'}</button>
+        <button class="favorite-toggle${isFavorite(item) ? ' is-active' : ''}" type="button" data-favorite-index="${index}" aria-pressed="${isFavorite(item) ? 'true' : 'false'}" aria-label="${isFavorite(item) ? 'Quitar de favoritos' : 'Añadir a favoritos'}">${isFavorite(item) ? '♥ En favoritos' : '♡ Guardar'}</button>
       </div>
       <strong>${escapeHtml(cardTitle(item))}</strong>
     </div>
@@ -710,17 +791,27 @@ async function loadClientAreaState() {
 
 async function saveClientFavorites() {
   try {
-    await fetch(CLIENT_AREA_URL, {
+    const response = await fetch(CLIENT_AREA_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ favorites: [...favoriteKeys] }),
     });
+    clientAreaReady = response.ok;
+    if (!response.ok && favoriteStatus) {
+      favoriteStatus.textContent = 'No se pudieron guardar los favoritos en tu área cliente.';
+    }
   } catch {}
 }
 
 function toggleFavoriteByIndex(index) {
   const item = currentRows[index];
   if (!item) return;
+  if (!clientAreaReady) {
+    if (favoriteStatus) {
+      favoriteStatus.textContent = 'Necesitas entrar con tu cuenta para guardar favoritos en el área cliente.';
+    }
+    return;
+  }
   const key = rowKey(item);
   if (favoriteKeys.has(key)) favoriteKeys.delete(key);
   else favoriteKeys.add(key);
@@ -844,6 +935,7 @@ Promise.all([
     activeTables = localData?.tables ? mergeTables(localData.tables) : baseTables;
     catalog = mergeCatalogRows(baseCatalog, localData?.items);
     originalIndexById = new Map(catalog.map((item, index) => [item.codigo || item.archivo || item.referencia_csv || `${index}`, index]));
+    clientAreaReady = Boolean(clientArea?.ok);
     favoriteKeys = new Set(Array.isArray(clientArea?.favorites) ? clientArea.favorites : []);
     render();
   });
