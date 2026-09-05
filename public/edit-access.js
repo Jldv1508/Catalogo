@@ -19,6 +19,8 @@ const DEFAULT_TABLES = {
   colors: { '000': 'Pendiente', '001': 'Multicolor', '002': 'Blanco', '003': 'Negro', '004': 'Rojo', '005': 'Plateado', '006': 'Verde', '007': 'Azul', '008': 'Marrón', '009': 'Multicolor', '010': 'Naranja', '011': 'Amarillo', '012': 'Morado', '013': 'Turquesa', '014': 'Rosa', '015': 'Gris', '016': 'Lila', '017': 'Fucsia', '999': 'Pendiente' },
 };
 
+const THUMBNAIL_ZOOM_LEVELS = [2, 4, 8, 16, 32, 64];
+
 let state = {
   unlocked: false,
   loading: false,
@@ -27,6 +29,7 @@ let state = {
   selected: new Set(),
   selectionAnchor: -1,
   compact: false,
+  thumbnailZoom: 2,
   filters: { q: '', type: [], submodel: [], material: [], color: [], priceMin: '', priceMax: '' },
   draft: createDraftItem(),
   publicKey: '',
@@ -36,6 +39,7 @@ let state = {
     auto: [],
     manual: [],
   },
+  detailsOpen: new Set(),
 };
 let autoBackupTimer = null;
 let lastAutoBackupSignature = '';
@@ -1527,6 +1531,43 @@ function deleteTableEntry(kind) {
   renderWorkspace();
 }
 
+function deleteItemsByIndexes(indexes) {
+  const unique = [...new Set(indexes)].filter(i => Number.isInteger(i) && i >= 0 && i < state.items.length);
+  if (!unique.length) return 0;
+  const preview = unique.length === 1
+    ? `Código: ${code(state.items[unique[0]])} — ${pieceName(state.items[unique[0]])}`
+    : unique.slice(0, 4).map(i => code(state.items[i])).join(' · ') + (unique.length > 4 ? ` · y ${unique.length - 4} más` : '');
+  const confirmMsg = unique.length === 1
+    ? `Vas a eliminar 1 ficha permanentemente.\n\n${preview}\n\nEsta acción no se puede deshacer (pero puedes restaurar un snapshot automático o manual).\n\n¿Confirmar eliminación?`
+    : `Vas a eliminar ${unique.length} fichas permanentemente.\n\n${preview}\n\nEsta acción no se puede deshacer (pero puedes restaurar un snapshot automático o manual).\n\n¿Confirmar eliminación?`;
+  if (!confirm(confirmMsg)) return 0;
+  const sortedDesc = unique.sort((a, b) => b - a);
+  sortedDesc.forEach(i => {
+    state.items.splice(i, 1);
+    openCardEditors.delete(i);
+  });
+  const remainingSelected = new Set();
+  state.selected.forEach(selIdx => {
+    let shift = 0;
+    sortedDesc.forEach(delIdx => { if (delIdx < selIdx) shift++; });
+    const newIdx = selIdx - shift;
+    if (newIdx >= 0 && newIdx < state.items.length) remainingSelected.add(newIdx);
+  });
+  state.selected = remainingSelected;
+  if (state.selectionAnchor >= state.items.length) state.selectionAnchor = -1;
+  savePublicPayload();
+  renderWorkspace();
+  return unique.length;
+}
+
+function setThumbnailZoom(level) {
+  const n = Number(level);
+  if (!THUMBNAIL_ZOOM_LEVELS.includes(n)) return;
+  state.thumbnailZoom = n;
+  if (!state.compact) state.compact = true;
+  renderWorkspace();
+}
+
 function restorePublicCatalog() {
   const payload = loadPublicPayload();
   if (!payload?.items) return false;
@@ -1753,7 +1794,62 @@ function toggleCompact() {
   renderWorkspace();
 }
 
+function captureOpenDetails() {
+  try {
+    const workspace = document.querySelector('[data-edit-workspace]');
+    if (!workspace) return;
+    const captured = new Set();
+    workspace.querySelectorAll('details[open]').forEach((el, i) => {
+      const classes = el.className ? '.' + el.className.trim().split(/\s+/).filter(Boolean).map(s => CSS.escape(s)).join('.') : '';
+      const cardEditorIdx = el.dataset.cardEditor;
+      if (cardEditorIdx != null && cardEditorIdx !== '') {
+        captured.add(`card-editor:${cardEditorIdx}`);
+        return;
+      }
+      const sectionIdx = [...workspace.querySelectorAll('details.public-edit-section')].indexOf(el);
+      if (sectionIdx >= 0 && el.classList.contains('public-edit-section')) {
+        captured.add(`section:${sectionIdx}`);
+        return;
+      }
+      const tableIdx = [...workspace.querySelectorAll('details.public-edit-table-box')].indexOf(el);
+      if (tableIdx >= 0) {
+        captured.add(`table:${tableIdx}`);
+        return;
+      }
+      captured.add(`fallback:${classes}:${i}`);
+    });
+    state.detailsOpen = captured;
+  } catch {}
+}
+
+function restoreOpenDetails() {
+  try {
+    const workspace = document.querySelector('[data-edit-workspace]');
+    if (!workspace) return;
+    workspace.querySelectorAll('details').forEach(el => {
+      const cardEditorIdx = el.dataset.cardEditor;
+      if (cardEditorIdx != null && cardEditorIdx !== '') {
+        if (state.detailsOpen.has(`card-editor:${cardEditorIdx}`)) el.setAttribute('open', '');
+        else el.removeAttribute('open');
+        return;
+      }
+    });
+    const sections = [...workspace.querySelectorAll('details.public-edit-section')];
+    sections.forEach((el, idx) => {
+      if (state.detailsOpen.has(`section:${idx}`)) el.setAttribute('open', '');
+      else if (el.classList.contains('public-edit-section--sticky')) ;
+      else el.removeAttribute('open');
+    });
+    const tableBoxes = [...workspace.querySelectorAll('details.public-edit-table-box')];
+    tableBoxes.forEach((el, idx) => {
+      if (state.detailsOpen.has(`table:${idx}`)) el.setAttribute('open', '');
+      else el.removeAttribute('open');
+    });
+  } catch {}
+}
+
 function renderWorkspace() {
+  captureOpenDetails();
   const workspace = document.querySelector('[data-edit-workspace]');
   if (!workspace || !state.unlocked) return;
 
@@ -1814,6 +1910,9 @@ function renderWorkspace() {
             <label class="full">Nombre generado<input value="${escapeAttr(pieceName(item))}" readonly></label>
             <label class="full">Medidas<input data-item-field="medidas" data-index="${index}" value="${escapeAttr(item.medidas || item.measures || '')}"></label>
             <label class="full">Descripcion<textarea data-item-field="description" data-index="${index}">${escapeHtml(item.description || item.descripcion || '')}</textarea></label>
+            <div class="public-edit-inline-actions public-edit-inline-actions--danger">
+              <button type="button" class="is-danger" data-delete-item="${index}">Eliminar esta pieza</button>
+            </div>
           </div>
         </details>
       </div>
@@ -2038,6 +2137,13 @@ function renderWorkspace() {
           <button type="button" data-compact-toggle>${state.compact ? 'Vista completa' : 'Vista rapida'}</button>
           <button type="button" data-invert-visible>Invertir visibles</button>
           <button type="button" data-apply-bulk>Aplicar a seleccionadas</button>
+          <button type="button" class="is-danger" data-delete-selected>Eliminar seleccionadas</button>
+        </div>
+        <div class="public-edit-actions-row public-edit-actions-row--zoom">
+          <span class="public-edit-zoom-label"><strong>Miniaturas</strong> (vista rápida)</span>
+          ${THUMBNAIL_ZOOM_LEVELS.map(lv => `
+            <button type="button" data-set-thumbnail-zoom="${lv}" class="public-edit-zoom-btn${state.thumbnailZoom === lv ? ' is-active' : ''}" title="Tamaño miniatura ${lv}x">${lv}x</button>
+          `).join('')}
         </div>
         <div class="public-edit-bulk">
           <label>Tipo<select data-bulk-type>${bulkTypeOptions}</select></label>
@@ -2069,7 +2175,7 @@ function renderWorkspace() {
         </div>
       </div>
       <div class="public-edit-section-content">
-        <div class="public-edit-grid${state.compact ? ' is-compact' : ''}">
+        <div class="public-edit-grid${state.compact ? ' is-compact' : ''}" data-thumbnail-zoom="${state.thumbnailZoom}">
           ${visibleCards || '<div class="public-edit-empty">No hay piezas visibles.</div>'}
         </div>
       </div>
@@ -2133,9 +2239,26 @@ function renderWorkspace() {
     });
   });
   workspace.querySelector('[data-compact-toggle]').addEventListener('click', toggleCompact);
+  workspace.querySelectorAll('[data-set-thumbnail-zoom]').forEach(btn => {
+    btn.addEventListener('click', () => setThumbnailZoom(btn.dataset.setThumbnailZoom));
+  });
   workspace.querySelector('[data-select-visible]').addEventListener('click', selectVisible);
   workspace.querySelector('[data-invert-visible]').addEventListener('click', invertVisible);
   workspace.querySelector('[data-clear-selection]').addEventListener('click', clearSelection);
+  workspace.querySelector('[data-delete-selected]')?.addEventListener('click', () => {
+    if (!state.selected.size) {
+      alert('No hay fichas seleccionadas para eliminar.');
+      return;
+    }
+    deleteItemsByIndexes([...state.selected]);
+  });
+  workspace.querySelectorAll('[data-delete-item]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.deleteItem);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= state.items.length) return;
+      deleteItemsByIndexes([idx]);
+    });
+  });
   workspace.querySelector('[data-import-json-button]').addEventListener('click', () => {
     workspace.querySelector('[data-import-json]').click();
   });
@@ -2576,6 +2699,9 @@ function renderWorkspace() {
   });
 
   renderAutoBackupStatus();
+  if (typeof window !== 'undefined') {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(restoreOpenDetails));
+  }
 }
 
 function createPanel() {
